@@ -32,12 +32,16 @@ export default function Navbar() {
         </ul>
 
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm">
-            Sign in
-          </Button>
-          <Button variant="primary" size="sm">
-            Get started
-          </Button>
+          <Link href="/login">
+            <Button variant="ghost" size="sm">
+              Sign in
+            </Button>
+          </Link>
+          <Link href="/register">
+            <Button variant="primary" size="sm">
+              Get started
+            </Button>
+          </Link>
         </div>
       </nav>
     </header>
