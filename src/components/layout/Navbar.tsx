@@ -35,9 +35,11 @@ export default function Navbar() {
           <Button variant="ghost" size="sm">
             Sign in
           </Button>
-          <Button variant="primary" size="sm">
-            Get started
-          </Button>
+          <Link href="/register">
+            <Button variant="primary" size="sm">
+              Get started
+            </Button>
+          </Link>
         </div>
       </nav>
     </header>
