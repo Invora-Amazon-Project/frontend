@@ -14,6 +14,7 @@
   --color-primary: #7986cb;
   --color-primary-hover: #5c6bc0;
   --color-primary-light: #e8eaf8;
+  --color-cta-bg: #3d52a0;
 
   --color-heading: #2c3570;
   --color-body: #3d4a8a;
@@ -33,5 +34,6 @@
     font-family: var(--font-sans);
     background-color: var(--color-page-bg);
     color: var(--color-body);
+    scroll-behavior: smooth;
   }
 }
