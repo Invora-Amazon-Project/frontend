@@ -1,8 +1,7 @@
 // src/components/ui/Badge.tsx
 
 import type { ReactNode } from "react";
-
-type BadgeVariant = "default" | "success" | "warning" | "danger" | "info";
+import type { BadgeVariant } from "@/types";
 
 interface BadgeProps {
   variant?: BadgeVariant;

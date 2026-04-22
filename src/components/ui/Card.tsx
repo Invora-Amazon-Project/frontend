@@ -1,8 +1,7 @@
 // src/components/ui/Card.tsx
 
 import type { ReactNode } from "react";
-
-type CardVariant = "default" | "featured";
+import type { CardVariant } from "@/types";
 
 interface CardProps {
   variant?: CardVariant;
