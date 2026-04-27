@@ -1,6 +1,7 @@
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import type { CardVariant, ButtonVariant } from "@/types";
+import Link from "next/link";
 
 interface Plan {
   name: string;
@@ -103,13 +104,15 @@ export default function Pricing() {
                 ))}
               </ul>
 
-              <Button
-                variant={plan.buttonVariant}
-                size="md"
-                className="w-full justify-center"
-              >
-                {plan.cta}
-              </Button>
+              <Link href="/register">
+                <Button
+                  variant={plan.buttonVariant}
+                  size="md"
+                  className="w-full justify-center"
+                >
+                  {plan.cta}
+                </Button>
+              </Link>
             </Card>
           ))}
         </div>
