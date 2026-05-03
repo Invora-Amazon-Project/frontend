@@ -1,53 +1,15 @@
+"use client";
+
+import Link from "next/link";
+import { useState } from "react";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
-import type { CardVariant, ButtonVariant } from "@/types";
-
-interface Plan {
-  name: string;
-  price: string;
-  period: string | null;
-  description: string;
-  features: string[];
-  cta: string;
-  variant: CardVariant;
-  buttonVariant: ButtonVariant;
-}
-
-const plans: Plan[] = [
-  {
-    name: "Starter",
-    price: "Free",
-    period: null,
-    description: "Perfect for new sellers just getting started.",
-    features: [
-      "Up to 20 product searches/mo",
-      "1 sourcing list",
-      "Basic analytics",
-      "Email support",
-    ],
-    cta: "Get started free",
-    variant: "default",
-    buttonVariant: "outline",
-  },
-  {
-    name: "Pro",
-    price: "$49",
-    period: "/ month",
-    description: "For serious sellers ready to scale their business.",
-    features: [
-      "Unlimited product searches",
-      "Unlimited sourcing lists",
-      "Advanced analytics & P&L",
-      "Competitor tracking",
-      "Priority support",
-    ],
-    cta: "Start 14-day free trial",
-    variant: "featured",
-    buttonVariant: "primary",
-  },
-];
+import { plans } from "@/lib/plan";
+import type { Plan } from "@/lib/plan";
 
 export default function Pricing() {
+  const [isAnnual, setIsAnnual] = useState(false);
+
   return (
     <section id="pricing" className="bg-card-bg py-24 px-6">
       <div className="max-w-6xl mx-auto">
@@ -61,9 +23,22 @@ export default function Pricing() {
           <p className="text-base text-muted max-w-lg mx-auto leading-relaxed">
             Start free, upgrade when you are ready. No hidden fees.
           </p>
+
+          <div className="flex items-center justify-center gap-3 mt-6">
+            <span className="text-sm text-muted">Monthly</span>
+            <button
+              onClick={() => setIsAnnual(!isAnnual)}
+              className={`w-11 cursor-pointer h-6 rounded-full transition-colors ${isAnnual ? "bg-primary" : "bg-border"}`}
+            >
+              <span
+                className={`block w-4 h-4 bg-white rounded-full mx-1 transition-transform ${isAnnual ? "translate-x-5" : "translate-x-0"}`}
+              />
+            </button>
+            <span className="text-sm text-muted">Annually</span>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
           {plans.map((plan) => (
             <Card key={plan.name} variant={plan.variant}>
               <p className="text-xs font-medium text-muted uppercase tracking-widest mb-4">
@@ -72,12 +47,21 @@ export default function Pricing() {
 
               <div className="flex items-end gap-1 mb-2">
                 <span className="text-4xl font-semibold text-heading">
-                  {plan.price}
+                  {isAnnual ? plan.pricing.annualMonthly : plan.pricing.monthly}
                 </span>
-                {plan.period && (
-                  <span className="text-sm text-muted mb-1">{plan.period}</span>
-                )}
+                <span className="text-sm text-muted mb-1">/ month</span>
               </div>
+              {isAnnual && (
+                <p className="text-xs text-muted mb-2">
+                  {plan.pricing.annualTotal} billed annually
+                </p>
+              )}
+
+              {plan.seats && (
+                <span className="inline-block text-xs font-medium bg-mint-bg text-green-700 px-2 py-0.5 rounded-full mb-3">
+                  {plan.seats}
+                </span>
+              )}
 
               <p className="text-sm text-muted mb-6 leading-relaxed">
                 {plan.description}
@@ -103,13 +87,20 @@ export default function Pricing() {
                 ))}
               </ul>
 
-              <Button
-                variant={plan.buttonVariant}
-                size="md"
-                className="w-full justify-center"
-              >
-                {plan.cta}
-              </Button>
+              <Link href="/register">
+                <Button
+                  variant={plan.buttonVariant}
+                  size="md"
+                  className="w-full justify-center"
+                >
+                  {plan.cta}
+                </Button>
+              </Link>
+              {plan.note && (
+                <p className="text-xs text-muted text-center mt-3">
+                  {plan.note}
+                </p>
+              )}
             </Card>
           ))}
         </div>
