@@ -7,7 +7,6 @@ import Input from "@/components/ui/Input";
 
 /* ---------- Type ---------- */
 export type RegisterFormData = {
-  fullName: string;
   email: string;
   password: string;
   confirmPassword: string;
@@ -72,15 +71,6 @@ export default function RegisterInputs({ register, errors }: RegisterInputsProps
 
   return (
     <>
-      {/* Full Name */}
-      <Input
-        label="Full Name"
-        id="fullName"
-        placeholder="Your Full Name"
-        error={errors.fullName?.message}
-        {...register("fullName")}
-      />
-
       {/* Email */}
       <Input
         label="Email"
@@ -114,7 +104,6 @@ export default function RegisterInputs({ register, errors }: RegisterInputsProps
           <EyeButton visible={showPassword} onToggle={() => setShowPassword((v) => !v)} />
         </div>
 
-        {/* Password strength indicator */}
         {passwordValue && (
           <div className="mt-2">
             <div className="flex gap-1">
@@ -174,17 +163,11 @@ export default function RegisterInputs({ register, errors }: RegisterInputsProps
           />
           <label htmlFor="terms" className="text-sm text-muted leading-relaxed cursor-pointer">
             I have read and agree to the{" "}
-            <Link
-              href="/terms"
-              className="text-primary hover:text-primary-hover underline underline-offset-2 transition-colors duration-150"
-            >
+            <Link href="/terms" className="text-primary hover:text-primary-hover underline underline-offset-2 transition-colors duration-150">
               Terms of Service
             </Link>
             {" "}and{" "}
-            <Link
-              href="/privacy"
-              className="text-primary hover:text-primary-hover underline underline-offset-2 transition-colors duration-150"
-            >
+            <Link href="/privacy" className="text-primary hover:text-primary-hover underline underline-offset-2 transition-colors duration-150">
               Privacy Policy
             </Link>
           </label>

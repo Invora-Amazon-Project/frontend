@@ -13,7 +13,6 @@ import RegisterInputs, { RegisterFormData } from "../register/components/Registe
 /* ---------- Zod schema ---------- */
 const registerSchema = z
   .object({
-    fullName: z.string().min(2, "Full name must be at least 2 characters").max(60, "Full name must be at most 60 characters"),
     email: z.string().email("Please enter a valid email address"),
     password: z
       .string()
