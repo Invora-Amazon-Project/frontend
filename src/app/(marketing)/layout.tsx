@@ -1,4 +1,4 @@
-export default function PublicLayout({
+export default function MarketingLayout({
   children,
 }: {
   children: React.ReactNode;

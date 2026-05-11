@@ -27,6 +27,7 @@
   --color-peach: #ffb74d;
   --color-rose-bg: #fce4ec;
   --color-rose: #f48fb1;
+  --color-rose-dark: #b71c5a;
 }
 
 @layer base {

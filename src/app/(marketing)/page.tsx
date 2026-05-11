@@ -4,16 +4,20 @@ import HowItWorks from "@/components/sections/HowItWorks";
 import Pricing from "@/components/sections/Pricing";
 import Testimonials from "@/components/sections/Testimonials";
 import CTA from "@/components/sections/CTA";
+import Navbar from "@/components/layout/Navbar";
+import Footer from "@/components/layout/Footer";
 
 export default function LandingPage() {
   return (
-    <div>
+    <>
+      <Navbar />
       <Hero />
       <Features />
       <HowItWorks />
-      <Pricing />
+      <Pricing showCompareLink />
       <Testimonials />
       <CTA />
-    </div>
+      <Footer />
+    </>
   );
 }
