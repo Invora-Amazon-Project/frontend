@@ -5,9 +5,12 @@ import { useState } from "react";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import { plans } from "@/lib/plan";
-import type { Plan } from "@/lib/plan";
 
-export default function Pricing() {
+export default function Pricing({
+  showCompareLink = false,
+}: {
+  showCompareLink?: boolean;
+}) {
   const [isAnnual, setIsAnnual] = useState(false);
 
   return (
@@ -38,12 +41,20 @@ export default function Pricing() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto items-start">
           {plans.map((plan) => (
-            <Card key={plan.name} variant={plan.variant}>
-              <p className="text-xs font-medium text-muted uppercase tracking-widest mb-4">
-                {plan.name}
-              </p>
+            <div key={plan.name}>
+              <Card variant={plan.variant}>
+              <div className="flex items-center justify-between mb-4">
+                <p className="text-xs font-medium text-muted uppercase tracking-widest">
+                  {plan.name}
+                </p>
+                {plan.popular && (
+                  <span className="bg-primary text-white text-xs font-semibold px-3 py-1 rounded-full">
+                    Most Popular
+                  </span>
+                )}
+              </div>
 
               <div className="flex items-end gap-1 mb-2">
                 <span className="text-4xl font-semibold text-heading">
@@ -87,7 +98,7 @@ export default function Pricing() {
                 ))}
               </ul>
 
-              <Link href="/register">
+              <Link href={`/register`}>
                 <Button
                   variant={plan.buttonVariant}
                   size="md"
@@ -101,9 +112,20 @@ export default function Pricing() {
                   {plan.note}
                 </p>
               )}
-            </Card>
+              </Card>
+            </div>
           ))}
         </div>
+        {showCompareLink && (
+          <div className="text-center mt-10">
+            <Link
+              href="/pricing"
+              className="text-sm text-muted hover:text-heading transition-colors duration-150"
+            >
+              Compare all plan features →
+            </Link>
+          </div>
+        )}
       </div>
     </section>
   );

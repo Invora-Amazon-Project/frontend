@@ -7,11 +7,13 @@ export interface Plan {
     annualMonthly: string;
     annualTotal: string;
   };
+  trialDays?: number;
   seats?: string;
   description: string;
   features: string[];
   cta: string;
   note?: string;
+  popular?: boolean;
   variant: CardVariant;
   buttonVariant: ButtonVariant;
 }
@@ -24,6 +26,7 @@ export const plans: Plan[] = [
       annualMonthly: "$24",
       annualTotal: "$288",
     },
+    trialDays: 7,
     description:
       "Your first step into product sourcing. Simple, focused, and in control.",
     features: [
@@ -37,7 +40,7 @@ export const plans: Plan[] = [
       "Basic support",
     ],
     cta: "Start 7-day free trial",
-    note: "No credit card required",
+    note: "Try free for 7 days. No commitment.",
     variant: "default",
     buttonVariant: "outline",
   },
@@ -48,6 +51,7 @@ export const plans: Plan[] = [
       annualMonthly: "$65",
       annualTotal: "$780",
     },
+    trialDays: 7,
     description:
       "Find the winning product. See the risks. Place the order. One screen.",
     features: [
@@ -60,8 +64,9 @@ export const plans: Plan[] = [
       "Advanced filters, tags & Excel/CSV export",
       "Priority support",
     ],
-    cta: "Start 14-day free trial",
-    note: "Try free for 14 days. No commitment",
+    cta: "Start 7-day free trial",
+    note: "Try free for 7 days. No commitment.",
+    popular: true,
     variant: "featured",
     buttonVariant: "primary",
   },
@@ -72,6 +77,7 @@ export const plans: Plan[] = [
       annualMonthly: "$149",
       annualTotal: "$1,788",
     },
+    trialDays: 7,
     seats: "3 seats included · +$25/seat",
     description:
       "From product idea to purchase order. A shared workflow your whole team owns.",
@@ -85,8 +91,8 @@ export const plans: Plan[] = [
       "Supplier management & team performance dashboard",
       "Onboarding, priority support & integration assistance",
     ],
-    cta: "Book a Demo",
-    note: "Includes onboarding & setup demo",
+    cta: "Start 7-day free trial",
+    note: "Try free for 7 days. No commitment.",
     variant: "default",
     buttonVariant: "outline",
   },
