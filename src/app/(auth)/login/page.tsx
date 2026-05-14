@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -9,6 +10,8 @@ import { FcGoogle } from "react-icons/fc";
 import { FaFacebook, FaAmazon } from "react-icons/fa";
 import Button from "@/components/ui/Button";
 import LoginInputs, { LoginFormData } from "./components/LoginInputs";
+import { useAppDispatch, useAppSelector } from "@/lib/hooks";
+import { login } from "@/lib/authSlice";
 
 /* ---------- Zod schema ---------- */
 const loginSchema = z.object({
@@ -18,7 +21,9 @@ const loginSchema = z.object({
 
 /* ---------- Page ---------- */
 export default function LoginPage() {
-  const [serverError, setServerError] = useState<string | null>(null);
+  const router = useRouter();
+  const dispatch = useAppDispatch();
+  const { error: authError, loading } = useAppSelector((state) => state.auth);
 
   const {
     register,
@@ -29,12 +34,9 @@ export default function LoginPage() {
   });
 
   const onSubmit = async (data: LoginFormData) => {
-    setServerError(null);
-    try {
-      console.log("Login payload:", data);
-      await new Promise((r) => setTimeout(r, 800));
-    } catch {
-      setServerError("Sign in failed. Please try again.");
+    const result = await dispatch(login(data));
+    if (login.fulfilled.match(result)) {
+      router.push("/dashboard");
     }
   };
 
@@ -60,14 +62,14 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-5">
             <LoginInputs register={register} errors={errors} />
 
-            {serverError && (
+            {authError && (
               <div className="rounded-xl border border-rose-200 bg-rose-bg px-4 py-3 text-sm text-rose-600">
-                {serverError}
+                {authError}
               </div>
             )}
 
-            <Button type="submit" variant="primary" size="lg" className="w-full" disabled={isSubmitting}>
-              {isSubmitting ? "Signing in…" : "Sign in"}
+            <Button type="submit" variant="primary" size="lg" className="w-full" disabled={isSubmitting || loading}>
+              {isSubmitting || loading ? "Signing in…" : "Sign in"}
             </Button>
           </form>
 
