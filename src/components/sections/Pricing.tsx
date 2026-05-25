@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
+import WaitlistModal from "@/components/ui/WaitlistModal";
 import { plans } from "@/lib/plan";
 
 export default function Pricing({
@@ -12,6 +13,7 @@ export default function Pricing({
   showCompareLink?: boolean;
 }) {
   const [isAnnual, setIsAnnual] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   return (
     <section id="pricing" className="bg-card-bg py-24 px-6">
@@ -52,6 +54,11 @@ export default function Pricing({
                 {plan.popular && (
                   <span className="bg-primary text-white text-xs font-semibold px-3 py-1 rounded-full">
                     Most Popular
+                  </span>
+                )}
+                {plan.comingSoon && (
+                  <span className="bg-section-bg text-muted text-xs font-semibold px-3 py-1 rounded-full border border-border">
+                    Coming soon
                   </span>
                 )}
               </div>
@@ -98,16 +105,26 @@ export default function Pricing({
                 ))}
               </ul>
 
-              <Link href={`/register`}>
+              {plan.comingSoon ? (
+                <Button
+                  variant="outline"
+                  size="md"
+                  className="w-full justify-center opacity-50"
+                  disabled
+                >
+                  Coming soon
+                </Button>
+              ) : (
                 <Button
                   variant={plan.buttonVariant}
                   size="md"
                   className="w-full justify-center"
+                  onClick={() => setIsModalOpen(true)}
                 >
                   {plan.cta}
                 </Button>
-              </Link>
-              {plan.note && (
+              )}
+              {!plan.comingSoon && plan.note && (
                 <p className="text-xs text-muted text-center mt-3">
                   {plan.note}
                 </p>
@@ -127,6 +144,7 @@ export default function Pricing({
           </div>
         )}
       </div>
+      <WaitlistModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
     </section>
   );
 }

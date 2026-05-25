@@ -31,7 +31,8 @@ export default function Button({
   return (
     <button
       className={`
-        font-medium transition-colors duration-150 cursor-pointer
+        font-medium transition-colors duration-150
+        ${props.disabled ? "cursor-default pointer-events-none" : "cursor-pointer"}
         ${variantClasses[variant]}
         ${sizeClasses[size]}
         ${className}

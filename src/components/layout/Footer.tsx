@@ -13,7 +13,7 @@ export default function Footer() {
     <footer className="bg-card-bg border-border border-t">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
         <Link href="/" className="text-brand text-base font-semibold">
-          invora
+          MarginLane
         </Link>
 
         <p className="text-muted text-xs">

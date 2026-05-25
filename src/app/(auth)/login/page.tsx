@@ -42,6 +42,17 @@ export default function LoginPage() {
     <main className="flex min-h-[calc(100vh-8rem)] items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
 
+        {/* Back to Homepage */}
+        <Link
+          href="/"
+          className="flex items-center gap-1.5 text-sm text-muted hover:text-primary mb-6 transition-colors cursor-pointer"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 12H5M12 5l-7 7 7 7" />
+          </svg>
+          Back to Homepage
+        </Link>
+
         {/* Card */}
         <div className="rounded-2xl border border-border bg-card-bg p-8 shadow-sm">
 

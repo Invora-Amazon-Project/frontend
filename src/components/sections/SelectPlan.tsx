@@ -2,16 +2,9 @@
 
 import { useState } from "react";
 import Button from "@/components/ui/Button";
+import WaitlistModal from "@/components/ui/WaitlistModal";
 import { plans, type Plan } from "@/lib/plan";
 
-// TODO: Replace with actual Stripe payment links per plan/billing
-// success_url: https://yourdomain.com/payment/success
-// cancel_url:  https://yourdomain.com/payment/failed
-const STRIPE_LINKS: Record<string, Record<string, string>> = {
-  start: { monthly: "#", annual: "#" },
-  pro: { monthly: "#", annual: "#" },
-  team: { monthly: "#", annual: "#" },
-};
 
 type Billing = "monthly" | "annual";
 
@@ -42,6 +35,11 @@ function PlanCard({
         {plan.popular && (
           <span className="bg-primary text-white text-xs font-semibold px-3 py-1 rounded-full">
             Most Popular
+          </span>
+        )}
+        {plan.comingSoon && (
+          <span className="bg-section-bg text-muted text-xs font-semibold px-3 py-1 rounded-full border border-border">
+            Coming soon
           </span>
         )}
       </div>
@@ -88,15 +86,16 @@ function PlanCard({
       </ul>
 
       <Button
-        variant={plan.buttonVariant}
+        variant={plan.comingSoon ? "outline" : plan.buttonVariant}
         size="md"
-        className="w-full justify-center"
-        onClick={onSelect}
+        className={`w-full justify-center ${plan.comingSoon ? "opacity-50" : ""}`}
+        onClick={plan.comingSoon ? undefined : onSelect}
+        disabled={plan.comingSoon}
       >
-        {plan.cta}
+        {plan.comingSoon ? "Coming soon" : plan.cta}
       </Button>
 
-      {plan.note && (
+      {!plan.comingSoon && plan.note && (
         <p className="text-xs text-muted text-center mt-3">{plan.note}</p>
       )}
     </div>
@@ -105,11 +104,11 @@ function PlanCard({
 
 export default function SelectPlan() {
   const [isAnnual, setIsAnnual] = useState(false);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const billing: Billing = isAnnual ? "annual" : "monthly";
 
-  const handleSelectPlan = (plan: Plan) => {
-    const stripeLink = STRIPE_LINKS[plan.name.toLowerCase()]?.[billing] ?? "#";
-    window.location.href = stripeLink;
+  const handleSelectPlan = (_plan: Plan) => {
+    setIsModalOpen(true);
   };
 
   return (
@@ -168,6 +167,7 @@ export default function SelectPlan() {
           ))}
         </div>
       </div>
+      <WaitlistModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
     </div>
   );
 }

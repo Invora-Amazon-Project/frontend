@@ -41,7 +41,7 @@ export default function WaitlistModal({ isOpen, onClose }: WaitlistModalProps) {
               Join the waitlist
             </h3>
             <p className="text-sm text-muted">
-              Be the first to know when Invora launches.
+              Be the first to know when MarginLane launches.
             </p>
           </div>
           <button
@@ -79,7 +79,7 @@ export default function WaitlistModal({ isOpen, onClose }: WaitlistModalProps) {
               You are on the list!
             </p>
             <p className="text-sm text-muted">
-              We will notify you as soon as Invora is ready.
+              We will notify you as soon as MarginLane is ready.
             </p>
           </div>
         ) : (
