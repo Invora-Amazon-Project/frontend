@@ -22,7 +22,7 @@ export default function Hero() {
         </h1>
 
         <p className="text-base text-muted leading-relaxed max-w-xl mx-auto mb-10">
-          Invora helps Amazon sellers find profitable products, manage
+          MarginLane helps Amazon sellers find profitable products, manage
           suppliers, and track real margins — all in one place.
         </p>
 

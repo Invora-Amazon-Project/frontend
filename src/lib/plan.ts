@@ -14,6 +14,7 @@ export interface Plan {
   cta: string;
   note?: string;
   popular?: boolean;
+  comingSoon?: boolean;
   variant: CardVariant;
   buttonVariant: ButtonVariant;
 }
@@ -30,6 +31,7 @@ export const plans: Plan[] = [
     description:
       "Your first step into product sourcing. Simple, focused, and in control.",
     features: [
+      "7-day free trial",
       "Basic product search: ASIN, product name, EAN/barcode",
       "Core profit, ROI & margin calculator",
       "Basic sales potential indicator",
@@ -55,6 +57,7 @@ export const plans: Plan[] = [
     description:
       "Find the winning product. See the risks. Place the order. One screen.",
     features: [
+      "7-day free trial",
       "Everything in Start",
       "Advanced profit analysis: FBA fees, shipping, VAT & additional costs",
       "Break-even price & maximum buy price suggestion",
@@ -82,6 +85,7 @@ export const plans: Plan[] = [
     description:
       "From product idea to purchase order. A shared workflow your whole team owns.",
     features: [
+      "7-day free trial",
       "Everything in Pro",
       "3 seats included, additional users at $25/seat/mo",
       "Role & permission management: admin, researcher, approver",
@@ -93,6 +97,7 @@ export const plans: Plan[] = [
     ],
     cta: "Start 7-day free trial",
     note: "Try free for 7 days. No commitment.",
+    comingSoon: true,
     variant: "default",
     buttonVariant: "outline",
   },

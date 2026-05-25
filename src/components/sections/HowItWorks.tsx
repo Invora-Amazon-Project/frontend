@@ -41,7 +41,7 @@ export default function HowItWorks() {
             Up and running in minutes
           </h2>
           <p className="text-base text-muted max-w-lg mx-auto leading-relaxed">
-            Getting started with Invora is simple. No technical setup, no
+            Getting started with MarginLane is simple. No technical setup, no
             learning curve.
           </p>
         </div>

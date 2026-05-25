@@ -85,9 +85,9 @@ const features: Feature[] = [
     ),
   },
   {
-    title: "50+ Integrations",
+    title: "Amazon Seller Central Integration",
     description:
-      "Connect Seller Central, Alibaba, Shopify, and more. Your tools, working together seamlessly.",
+      "Your FBA data, fees, and inventory synced directly. No manual entry, no guesswork — everything pulled from the source.",
     iconBg: "bg-primary-light",
     icon: (
       <svg
@@ -132,7 +132,7 @@ export default function Features() {
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-14">
           <p className="text-xs font-medium text-primary uppercase tracking-widest mb-3">
-            What Invora does
+            What MarginLane does
           </p>
           <h2 className="text-4xl font-semibold text-heading tracking-tight mb-4">
             Everything you need to source with confidence
