@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -8,7 +8,9 @@ import { z } from "zod";
 import { FcGoogle } from "react-icons/fc";
 import { FaFacebook, FaAmazon } from "react-icons/fa";
 import Button from "@/components/ui/Button";
-import RegisterInputs, { RegisterFormData } from "../register/components/RegisterInputs";
+import RegisterInputs, { RegisterFormData } from "./components/RegisterInputs";
+import { useAppDispatch, useAppSelector } from "@/lib/hooks";
+import { register as registerAction } from "@/lib/authSlice";
 
 /* ---------- Zod schema ---------- */
 const registerSchema = z
@@ -31,7 +33,9 @@ const registerSchema = z
 
 /* ---------- Page ---------- */
 export default function RegisterPage() {
-  const [serverError, setServerError] = useState<string | null>(null);
+  const router = useRouter();
+  const dispatch = useAppDispatch();
+  const { error: authError, loading } = useAppSelector((state) => state.auth);
 
   const {
     register,
@@ -42,12 +46,9 @@ export default function RegisterPage() {
   });
 
   const onSubmit = async (data: RegisterFormData) => {
-    setServerError(null);
-    try {
-      console.log("Register payload:", data);
-      await new Promise((r) => setTimeout(r, 800));
-    } catch {
-      setServerError("Could not create account. Please try again.");
+    const result = await dispatch(registerAction({ email: data.email, password: data.password }));
+    if (registerAction.fulfilled.match(result)) {
+      router.push("/dashboard");
     }
   };
 
@@ -84,14 +85,14 @@ export default function RegisterPage() {
           <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-5">
             <RegisterInputs register={register} errors={errors} />
 
-            {serverError && (
+            {authError && (
               <div className="rounded-xl border border-rose-200 bg-rose-bg px-4 py-3 text-sm text-rose-600">
-                {serverError}
+                {authError}
               </div>
             )}
 
-            <Button type="submit" variant="primary" size="lg" className="w-full" disabled={isSubmitting}>
-              {isSubmitting ? "Creating account…" : "Create account"}
+            <Button type="submit" variant="primary" size="lg" className="w-full" disabled={isSubmitting || loading}>
+              {isSubmitting || loading ? "Creating account…" : "Create account"}
             </Button>
           </form>
 
