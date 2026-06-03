@@ -1,4 +1,14 @@
-const BASE_URL = "https://backend-20vr.onrender.com";
+import axios from "axios";
+
+const BASE_URL = "https://backend-2n7w.onrender.com";
+
+export const axiosInstance = axios.create({
+  baseURL: BASE_URL,
+  headers: {
+    "Content-Type": "application/json",
+  },
+  withCredentials: true,
+});
 
 export interface LoginPayload {
   email: string;
@@ -20,31 +30,11 @@ export interface AuthResponse {
 }
 
 export async function loginService(payload: LoginPayload): Promise<AuthResponse> {
-  const res = await fetch(`${BASE_URL}/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || "Login failed");
-  }
-
-  return res.json();
+  const res = await axiosInstance.post<AuthResponse>("/auth/login", payload);
+  return res.data;
 }
 
 export async function registerService(payload: RegisterPayload): Promise<AuthResponse> {
-  const res = await fetch(`${BASE_URL}/auth/register`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || "Register failed");
-  }
-
-  return res.json();
+  const res = await axiosInstance.post<AuthResponse>("/auth/register", payload);
+  return res.data;
 }
