@@ -1,5 +1,13 @@
 import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
-import { loginService, registerService, LoginPayload, RegisterPayload, AuthResponse } from "./authService";
+import {
+  loginService,
+  registerService,
+  forgotPasswordService,
+  LoginPayload,
+  RegisterPayload,
+  ForgotPasswordPayload,
+  AuthResponse,
+} from "./authService";
 
 interface AuthState {
   user: AuthResponse["user"] | null;
@@ -7,6 +15,9 @@ interface AuthState {
   refreshToken: string | null;
   loading: boolean;
   error: string | null;
+  forgotPasswordLoading: boolean;
+  forgotPasswordError: string | null;
+  forgotPasswordSuccess: boolean;
 }
 
 const initialState: AuthState = {
@@ -15,6 +26,9 @@ const initialState: AuthState = {
   refreshToken: null,
   loading: false,
   error: null,
+  forgotPasswordLoading: false,
+  forgotPasswordError: null,
+  forgotPasswordSuccess: false,
 };
 
 export const login = createAsyncThunk("auth/login", async (payload: LoginPayload, { rejectWithValue }) => {
@@ -33,6 +47,17 @@ export const register = createAsyncThunk("auth/register", async (payload: Regist
   }
 });
 
+export const forgotPassword = createAsyncThunk(
+  "auth/forgotPassword",
+  async (payload: ForgotPasswordPayload, { rejectWithValue }) => {
+    try {
+      await forgotPasswordService(payload);
+    } catch (err: any) {
+      return rejectWithValue(err.message);
+    }
+  }
+);
+
 const authSlice = createSlice({
   name: "auth",
   initialState,
@@ -45,6 +70,10 @@ const authSlice = createSlice({
     },
     clearError(state) {
       state.error = null;
+    },
+    clearForgotPasswordState(state) {
+      state.forgotPasswordError = null;
+      state.forgotPasswordSuccess = false;
     },
   },
   extraReducers: (builder) => {
@@ -75,8 +104,24 @@ const authSlice = createSlice({
         state.loading = false;
         state.error = action.payload as string;
       });
+
+    // Forgot Password
+    builder
+      .addCase(forgotPassword.pending, (state) => {
+        state.forgotPasswordLoading = true;
+        state.forgotPasswordError = null;
+        state.forgotPasswordSuccess = false;
+      })
+      .addCase(forgotPassword.fulfilled, (state) => {
+        state.forgotPasswordLoading = false;
+        state.forgotPasswordSuccess = true;
+      })
+      .addCase(forgotPassword.rejected, (state, action) => {
+        state.forgotPasswordLoading = false;
+        state.forgotPasswordError = action.payload as string;
+      });
   },
 });
 
-export const { logout, clearError } = authSlice.actions;
+export const { logout, clearError, clearForgotPasswordState } = authSlice.actions;
 export default authSlice.reducer;

@@ -38,3 +38,11 @@ export async function registerService(payload: RegisterPayload): Promise<AuthRes
   const res = await axiosInstance.post<AuthResponse>("/auth/register", payload);
   return res.data;
 }
+
+export interface ForgotPasswordPayload {
+  email: string;
+}
+
+export async function forgotPasswordService(payload: ForgotPasswordPayload): Promise<void> {
+  await axiosInstance.post("/auth/forgot-password", payload);
+}

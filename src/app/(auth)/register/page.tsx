@@ -48,7 +48,7 @@ export default function RegisterPage() {
   const onSubmit = async (data: RegisterFormData) => {
     const result = await dispatch(registerAction({ email: data.email, password: data.password }));
     if (registerAction.fulfilled.match(result)) {
-      router.push("/dashboard");
+      router.push("/select-plan");
     }
   };
 
