@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -18,6 +19,7 @@ type ForgotPasswordFormData = z.infer<typeof forgotPasswordSchema>;
 
 /* ---------- Page ---------- */
 export default function ForgotPasswordPage() {
+  const router = useRouter();
   const dispatch = useAppDispatch();
   const { forgotPasswordLoading, forgotPasswordError, forgotPasswordSuccess } = useAppSelector(
     (state) => state.auth
@@ -33,7 +35,10 @@ export default function ForgotPasswordPage() {
 
   const onSubmit = async (data: ForgotPasswordFormData) => {
     dispatch(clearForgotPasswordState());
-    await dispatch(forgotPassword(data));
+    const result = await dispatch(forgotPassword(data));
+    if (forgotPassword.fulfilled.match(result) && result.payload.resetToken) {
+      router.push(`/reset-password?token=${encodeURIComponent(result.payload.resetToken)}`);
+    }
   };
 
   return (

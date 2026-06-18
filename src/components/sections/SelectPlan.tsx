@@ -1,9 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Button from "@/components/ui/Button";
 import WaitlistModal from "@/components/ui/WaitlistModal";
 import { plans, type Plan } from "@/lib/plan";
+import { useAppSelector } from "@/lib/hooks";
+import { getSubscriptionPlans, type SubscriptionPlan } from "@/lib/services/subscriptionPlansService";
+import { createUserSubscription } from "@/lib/services/userSubscriptionsService";
 
 
 type Billing = "monthly" | "annual";
@@ -105,9 +108,29 @@ function PlanCard({
 export default function SelectPlan() {
   const [isAnnual, setIsAnnual] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [backendPlans, setBackendPlans] = useState<SubscriptionPlan[]>([]);
   const billing: Billing = isAnnual ? "annual" : "monthly";
+  const userId = useAppSelector((state) => state.auth.user?.id);
 
-  const handleSelectPlan = (_plan: Plan) => {
+  useEffect(() => {
+    getSubscriptionPlans()
+      .then(setBackendPlans)
+      .catch(() => setBackendPlans([]));
+  }, []);
+
+  const handleSelectPlan = (plan: Plan) => {
+    const backendPlan = backendPlans.find(
+      (p) => p.name.toLowerCase() === plan.name.toLowerCase()
+    );
+
+    if (userId && backendPlan) {
+      createUserSubscription({
+        user_id: userId,
+        plan_id: backendPlan.id,
+        status: "trialing",
+      }).catch(() => {});
+    }
+
     setIsModalOpen(true);
   };
 
