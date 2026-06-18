@@ -43,6 +43,24 @@ export interface ForgotPasswordPayload {
   email: string;
 }
 
-export async function forgotPasswordService(payload: ForgotPasswordPayload): Promise<void> {
-  await axiosInstance.post("/auth/forgot-password", payload);
+export interface ForgotPasswordResponse {
+  ok: boolean;
+  /** DEV ONLY: e-posta servisi entegre edilene kadar backend bunu doğrudan döner. */
+  resetToken?: string;
+}
+
+export async function forgotPasswordService(
+  payload: ForgotPasswordPayload
+): Promise<ForgotPasswordResponse> {
+  const res = await axiosInstance.post<ForgotPasswordResponse>("/auth/forgot-password", payload);
+  return res.data;
+}
+
+export interface ResetPasswordPayload {
+  token: string;
+  newPassword: string;
+}
+
+export async function resetPasswordService(payload: ResetPasswordPayload): Promise<void> {
+  await axiosInstance.post("/auth/reset-password", payload);
 }
