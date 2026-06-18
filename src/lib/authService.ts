@@ -64,3 +64,12 @@ export interface ResetPasswordPayload {
 export async function resetPasswordService(payload: ResetPasswordPayload): Promise<void> {
   await axiosInstance.post("/auth/reset-password", payload);
 }
+
+export interface RefreshPayload {
+  refreshToken: string;
+}
+
+export async function refreshTokenService(payload: RefreshPayload): Promise<AuthResponse> {
+  const res = await axiosInstance.post<AuthResponse>("/auth/refresh", payload);
+  return res.data;
+}

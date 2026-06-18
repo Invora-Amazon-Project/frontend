@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useState } from "react";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
-import WaitlistModal from "@/components/ui/WaitlistModal";
 import { plans } from "@/lib/plan";
 
 export default function Pricing({
@@ -13,7 +12,6 @@ export default function Pricing({
   showCompareLink?: boolean;
 }) {
   const [isAnnual, setIsAnnual] = useState(false);
-  const [isModalOpen, setIsModalOpen] = useState(false);
 
   return (
     <section id="pricing" className="bg-card-bg py-24 px-6">
@@ -115,14 +113,15 @@ export default function Pricing({
                   Coming soon
                 </Button>
               ) : (
-                <Button
-                  variant={plan.buttonVariant}
-                  size="md"
-                  className="w-full justify-center"
-                  onClick={() => setIsModalOpen(true)}
-                >
-                  {plan.cta}
-                </Button>
+                <Link href="/register" className="w-full">
+                  <Button
+                    variant={plan.buttonVariant}
+                    size="md"
+                    className="w-full justify-center"
+                  >
+                    {plan.cta}
+                  </Button>
+                </Link>
               )}
               {!plan.comingSoon && plan.note && (
                 <p className="text-xs text-muted text-center mt-3">
@@ -144,7 +143,6 @@ export default function Pricing({
           </div>
         )}
       </div>
-      <WaitlistModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
     </section>
   );
 }

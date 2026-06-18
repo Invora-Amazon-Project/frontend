@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Button from "@/components/ui/Button";
-import WaitlistModal from "@/components/ui/WaitlistModal";
 import { plans, type Plan } from "@/lib/plan";
 import { useAppSelector } from "@/lib/hooks";
 import { getSubscriptionPlans, type SubscriptionPlan } from "@/lib/services/subscriptionPlansService";
@@ -106,8 +106,8 @@ function PlanCard({
 }
 
 export default function SelectPlan() {
+  const router = useRouter();
   const [isAnnual, setIsAnnual] = useState(false);
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [backendPlans, setBackendPlans] = useState<SubscriptionPlan[]>([]);
   const billing: Billing = isAnnual ? "annual" : "monthly";
   const userId = useAppSelector((state) => state.auth.user?.id);
@@ -131,7 +131,7 @@ export default function SelectPlan() {
       }).catch(() => {});
     }
 
-    setIsModalOpen(true);
+    router.push(`/payment/success?plan=${plan.name.toLowerCase()}&billing=${billing}`);
   };
 
   return (
@@ -190,7 +190,6 @@ export default function SelectPlan() {
           ))}
         </div>
       </div>
-      <WaitlistModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
     </div>
   );
 }

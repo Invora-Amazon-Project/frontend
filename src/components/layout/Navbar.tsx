@@ -1,9 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import Button from "../ui/Button";
-import WaitlistModal from "../ui/WaitlistModal";
 
 const navLinks = [
   { label: "Features", href: "#features" },
@@ -13,8 +11,6 @@ const navLinks = [
 ];
 
 export default function Navbar() {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-
   return (
     <header className="bg-card-bg border-border border-b">
       <nav className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
@@ -36,26 +32,18 @@ export default function Navbar() {
         </ul>
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setIsModalOpen(true)}
-          >
-            Sign in
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setIsModalOpen(true)}
-          >
-            Get started
-          </Button>
+          <Link href="/login">
+            <Button variant="ghost" size="sm">
+              Sign in
+            </Button>
+          </Link>
+          <Link href="/register">
+            <Button variant="primary" size="sm">
+              Get started
+            </Button>
+          </Link>
         </div>
       </nav>
-      <WaitlistModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-      />
     </header>
   );
 }

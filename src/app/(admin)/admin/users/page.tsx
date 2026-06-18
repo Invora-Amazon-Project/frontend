@@ -1,11 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import StatusBadge from "@/components/admin/StatusBadge";
 import FilterTabs from "@/components/admin/FilterTabs";
 import type { AdminUser, PlanName, UserStatus } from "@/types";
+import {
+  getNewsletterSubscribers,
+  deleteNewsletterSubscriber,
+  type NewsletterSubscriber,
+} from "@/lib/newsletterService";
 
 const mockUsers: AdminUser[] = [
   { id: "1", name: "Sarah Johnson", email: "sarah.johnson@example.com", plan: "pro", creditBalance: 340, status: "active", joinedDate: "2025-01-14", role: "user" },
@@ -18,7 +23,7 @@ const mockUsers: AdminUser[] = [
   { id: "8", name: "Ravi Patel", email: "ravi.patel@example.com", plan: "starter", creditBalance: 15, status: "blocked", joinedDate: "2025-04-11", role: "user" },
 ];
 
-const TABS = ["All", "Active", "Trial", "Blocked"];
+const TABS = ["All", "Active", "Trial", "Blocked", "Waitlisted"];
 
 const planStatusMap: Record<string, UserStatus> = {
   Active: "active",
@@ -33,6 +38,17 @@ export default function UsersPage() {
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(defaultForm);
+  const [waitlist, setWaitlist] = useState<NewsletterSubscriber[]>([]);
+  const [waitlistError, setWaitlistError] = useState(false);
+
+  useEffect(() => {
+    if (activeTab !== "Waitlisted") return;
+    getNewsletterSubscribers()
+      .then(setWaitlist)
+      .catch(() => setWaitlistError(true));
+  }, [activeTab]);
+
+  const isWaitlistTab = activeTab === "Waitlisted";
 
   const filtered = mockUsers.filter((u) => {
     const matchesTab =
@@ -43,6 +59,20 @@ export default function UsersPage() {
       u.email.toLowerCase().includes(search.toLowerCase());
     return matchesTab && matchesSearch;
   });
+
+  const filteredWaitlist = waitlist.filter(
+    (w) => search.trim() === "" || w.email.toLowerCase().includes(search.toLowerCase())
+  );
+
+  async function handleRemoveWaitlistSubscriber(id: string, email: string) {
+    if (!window.confirm(`Remove ${email} from the waitlist?`)) return;
+    try {
+      await deleteNewsletterSubscriber(id);
+      setWaitlist((prev) => prev.filter((w) => w.id !== id));
+    } catch {
+      window.alert("Failed to remove subscriber. Please try again.");
+    }
+  }
 
   function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -76,54 +106,104 @@ export default function UsersPage() {
       <div className="bg-card-bg border border-border rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-border bg-section-bg">
-              <th className="text-left px-5 py-3 text-muted font-medium">User</th>
-              <th className="text-left px-5 py-3 text-muted font-medium">Plan</th>
-              <th className="text-left px-5 py-3 text-muted font-medium">Credits</th>
-              <th className="text-left px-5 py-3 text-muted font-medium">Status</th>
-              <th className="text-left px-5 py-3 text-muted font-medium">Joined</th>
-              <th className="text-left px-5 py-3 text-muted font-medium">Actions</th>
-            </tr>
+            {isWaitlistTab ? (
+              <tr className="border-b border-border bg-section-bg">
+                <th className="text-left px-5 py-3 text-muted font-medium">User</th>
+                <th className="text-left px-5 py-3 text-muted font-medium">Subscribed At</th>
+                <th className="text-left px-5 py-3 text-muted font-medium">Actions</th>
+              </tr>
+            ) : (
+              <tr className="border-b border-border bg-section-bg">
+                <th className="text-left px-5 py-3 text-muted font-medium">User</th>
+                <th className="text-left px-5 py-3 text-muted font-medium">Plan</th>
+                <th className="text-left px-5 py-3 text-muted font-medium">Credits</th>
+                <th className="text-left px-5 py-3 text-muted font-medium">Status</th>
+                <th className="text-left px-5 py-3 text-muted font-medium">Joined</th>
+                <th className="text-left px-5 py-3 text-muted font-medium">Actions</th>
+              </tr>
+            )}
           </thead>
           <tbody>
-            {filtered.map((user, i) => (
-              <tr
-                key={user.id}
-                className={`border-b border-border last:border-0 hover:bg-section-bg/50 transition-colors ${i % 2 === 0 ? "" : "bg-page-bg/40"}`}
-              >
-                <td className="px-5 py-3.5">
-                  <p className="text-heading font-medium">{user.name}</p>
-                  <p className="text-muted text-xs mt-0.5">{user.email}</p>
-                </td>
-                <td className="px-5 py-3.5">
-                  <span className="bg-primary-light text-primary text-xs rounded-full px-2.5 py-0.5 capitalize">
-                    {user.plan}
-                  </span>
-                </td>
-                <td className="px-5 py-3.5 text-body">{user.creditBalance.toLocaleString()}</td>
-                <td className="px-5 py-3.5">
-                  <StatusBadge status={user.status} />
-                </td>
-                <td className="px-5 py-3.5 text-muted">
-                  {new Date(user.joinedDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
-                </td>
-                <td className="px-5 py-3.5">
-                  <div className="flex items-center gap-3">
-                    <button className="text-primary text-sm hover:underline">View</button>
-                    <span className="text-border">|</span>
-                    <button className="text-primary text-sm hover:underline">Edit</button>
-                    <span className="text-border">|</span>
-                    <button className="text-rose text-sm hover:underline">Block</button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {filtered.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-5 py-10 text-center text-muted text-sm">
-                  No users match your search.
-                </td>
-              </tr>
+            {isWaitlistTab ? (
+              <>
+                {filteredWaitlist.map((sub, i) => (
+                  <tr
+                    key={sub.id}
+                    className={`border-b border-border last:border-0 hover:bg-section-bg/50 transition-colors ${i % 2 === 0 ? "" : "bg-page-bg/40"}`}
+                  >
+                    <td className="px-5 py-3.5">
+                      <p className="text-heading font-medium">{sub.email}</p>
+                    </td>
+                    <td className="px-5 py-3.5 text-muted">
+                      {new Date(sub.subscribed_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <button
+                        className="text-rose text-sm hover:underline cursor-pointer"
+                        onClick={() => handleRemoveWaitlistSubscriber(sub.id, sub.email)}
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {waitlistError && (
+                  <tr>
+                    <td colSpan={3} className="px-5 py-10 text-center text-rose text-sm">
+                      Failed to load waitlist subscribers.
+                    </td>
+                  </tr>
+                )}
+                {!waitlistError && filteredWaitlist.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="px-5 py-10 text-center text-muted text-sm">
+                      No waitlist subscribers match your search.
+                    </td>
+                  </tr>
+                )}
+              </>
+            ) : (
+              <>
+                {filtered.map((user, i) => (
+                  <tr
+                    key={user.id}
+                    className={`border-b border-border last:border-0 hover:bg-section-bg/50 transition-colors ${i % 2 === 0 ? "" : "bg-page-bg/40"}`}
+                  >
+                    <td className="px-5 py-3.5">
+                      <p className="text-heading font-medium">{user.name}</p>
+                      <p className="text-muted text-xs mt-0.5">{user.email}</p>
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <span className="bg-primary-light text-primary text-xs rounded-full px-2.5 py-0.5 capitalize">
+                        {user.plan}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5 text-body">{user.creditBalance.toLocaleString()}</td>
+                    <td className="px-5 py-3.5">
+                      <StatusBadge status={user.status} />
+                    </td>
+                    <td className="px-5 py-3.5 text-muted">
+                      {new Date(user.joinedDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center gap-3">
+                        <button className="text-primary text-sm hover:underline">View</button>
+                        <span className="text-border">|</span>
+                        <button className="text-primary text-sm hover:underline">Edit</button>
+                        <span className="text-border">|</span>
+                        <button className="text-rose text-sm hover:underline">Block</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+                {filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-10 text-center text-muted text-sm">
+                      No users match your search.
+                    </td>
+                  </tr>
+                )}
+              </>
             )}
           </tbody>
         </table>
@@ -131,7 +211,11 @@ export default function UsersPage() {
 
       {/* Pagination */}
       <div className="flex items-center justify-between">
-        <p className="text-muted text-sm">Showing 1–{filtered.length} of 48 users</p>
+        <p className="text-muted text-sm">
+          {isWaitlistTab
+            ? `Showing 1–${filteredWaitlist.length} of ${waitlist.length} waitlist subscribers`
+            : `Showing 1–${filtered.length} of 48 users`}
+        </p>
         <div className="flex gap-2">
           <Button variant="outline" size="sm">Prev</Button>
           <Button variant="outline" size="sm">Next</Button>

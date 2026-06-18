@@ -2,43 +2,48 @@
 
 import { useState } from "react";
 import Button from "@/components/ui/Button";
-import type { PlanConfig, PlanName } from "@/types";
+import type { PlanConfig, PlanName, SupportLevel } from "@/types";
 
 const EXPORT_OPTIONS = ["CSV", "Excel", "PDF"];
+const SUPPORT_LEVELS: SupportLevel[] = ["Standard", "Prioritized", "Team Priority"];
 
 const initialPlans: PlanConfig[] = [
   {
     name: "starter",
-    price: 19,
+    price: 29,
     trialDays: 7,
     monthlyCredits: 200,
     importLimit: 100,
     watchlistLimit: 20,
     dailyPulseAccess: false,
     exportOptions: ["CSV"],
-    supportLevel: "Email",
+    supportLevel: "Standard",
+    annualDiscountPercent: 17.24,
   },
   {
     name: "pro",
-    price: 49,
+    price: 79,
     trialDays: 14,
     monthlyCredits: 500,
     importLimit: 500,
     watchlistLimit: 100,
     dailyPulseAccess: true,
     exportOptions: ["CSV", "Excel"],
-    supportLevel: "Priority Email",
+    supportLevel: "Prioritized",
+    annualDiscountPercent: 17.72,
   },
   {
     name: "team",
-    price: 149,
+    price: 179,
     trialDays: 14,
     monthlyCredits: 2000,
     importLimit: 2000,
     watchlistLimit: 500,
     dailyPulseAccess: true,
     exportOptions: ["CSV", "Excel", "PDF"],
-    supportLevel: "Dedicated Support",
+    supportLevel: "Team Priority",
+    annualDiscountPercent: 16.76,
+    includedTeamSeats: 3,
   },
 ];
 
@@ -66,6 +71,8 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void 
 
 function PlanCard({ initial }: { initial: PlanConfig }) {
   const [plan, setPlan] = useState<PlanConfig>(initial);
+  const annualMonthly = plan.price * (1 - plan.annualDiscountPercent / 100);
+  const annualTotal = annualMonthly * 12;
 
   function field(key: keyof PlanConfig, label: string, type: "number" | "text") {
     return (
@@ -108,10 +115,30 @@ function PlanCard({ initial }: { initial: PlanConfig }) {
       {/* Fields */}
       <div className="space-y-3 flex-1">
         {field("price", "Price (USD)", "number")}
+        {field("annualDiscountPercent", "Annual Discount (%)", "number")}
+        <p className="text-muted text-xs -mt-2">
+          Annual billing: ${annualMonthly.toFixed(2)}/mo · ${annualTotal.toFixed(2)}/year
+        </p>
+
         {field("trialDays", "Trial Days", "number")}
         {field("monthlyCredits", "Monthly Credits", "number")}
         {field("importLimit", "Import Limit", "number")}
         {field("watchlistLimit", "Watchlist Limit", "number")}
+
+        {plan.name === "team" && (
+          <div>
+            <label className="block text-muted text-xs mb-1">Included Team Seats</label>
+            <input
+              type="number"
+              min={1}
+              value={plan.includedTeamSeats ?? 3}
+              onChange={(e) =>
+                setPlan({ ...plan, includedTeamSeats: Number(e.target.value) })
+              }
+              className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-page-bg text-body outline-none focus:border-primary transition-colors"
+            />
+          </div>
+        )}
 
         {/* Daily Pulse toggle */}
         <div className="flex items-center justify-between">
@@ -122,7 +149,22 @@ function PlanCard({ initial }: { initial: PlanConfig }) {
           />
         </div>
 
-        {field("supportLevel", "Support Level", "text")}
+        <div>
+          <label className="block text-muted text-xs mb-1.5">Support Level</label>
+          <select
+            value={plan.supportLevel}
+            onChange={(e) =>
+              setPlan({ ...plan, supportLevel: e.target.value as SupportLevel })
+            }
+            className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-page-bg text-body outline-none focus:border-primary transition-colors cursor-pointer"
+          >
+            {SUPPORT_LEVELS.map((level) => (
+              <option key={level} value={level}>
+                {level}
+              </option>
+            ))}
+          </select>
+        </div>
 
         {/* Export options */}
         <div>

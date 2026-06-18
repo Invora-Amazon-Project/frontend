@@ -5,13 +5,14 @@ import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Input from "@/components/ui/Input";
+import { subscribeNewsletterService } from "@/lib/newsletterService";
 
 interface WaitlistModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-type Status = "idle" | "success" | "error";
+type Status = "idle" | "loading" | "success" | "error";
 
 export default function WaitlistModal({ isOpen, onClose }: WaitlistModalProps) {
   const [email, setEmail] = useState("");
@@ -20,10 +21,13 @@ export default function WaitlistModal({ isOpen, onClose }: WaitlistModalProps) {
   const handleSubmit = async () => {
     if (!email) return;
 
-    // Backend hazır olduğunda burası güncellenecek
-    // await fetch("/api/waitlist", { method: "POST", body: JSON.stringify({ email }) });
-
-    setStatus("success");
+    setStatus("loading");
+    try {
+      await subscribeNewsletterService({ email, source: "waitlist-modal" });
+      setStatus("success");
+    } catch {
+      setStatus("error");
+    }
   };
 
   const handleClose = () => {
@@ -112,8 +116,9 @@ export default function WaitlistModal({ isOpen, onClose }: WaitlistModalProps) {
               size="md"
               className="w-full justify-center"
               onClick={handleSubmit}
+              disabled={status === "loading"}
             >
-              Notify me
+              {status === "loading" ? "Submitting..." : "Notify me"}
             </Button>
 
             <p className="text-xs text-muted text-center mt-3">
