@@ -16,6 +16,7 @@ export type NotificationTarget = "all" | "by_plan" | "trial_only" | "single_user
 export type UserStatus = "active" | "blocked" | "trial";
 export type LogSeverity = "info" | "warning" | "error";
 export type DiscountType = "percentage" | "fixed";
+export type SupportLevel = "Standard" | "Prioritized" | "Team Priority";
 
 export interface AdminUser {
   id: string;
@@ -51,7 +52,9 @@ export interface PlanConfig {
   watchlistLimit: number;
   dailyPulseAccess: boolean;
   exportOptions: string[];
-  supportLevel: string;
+  supportLevel: SupportLevel;
+  annualDiscountPercent: number;
+  includedTeamSeats?: number;
 }
 
 export interface CreditTransaction {

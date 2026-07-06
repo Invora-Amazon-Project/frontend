@@ -5,6 +5,7 @@ import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import Card from "@/components/ui/Card";
+import { createSupportTicket } from "@/lib/services/supportTicketsService";
 
 type Category =
   | "technical_support"
@@ -21,6 +22,7 @@ type Status = "idle" | "success" | "error";
 interface TicketModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onCreated?: () => void;
   relatedEntity?: {
     type: "product" | "order" | "import";
     id: string;
@@ -47,6 +49,7 @@ const priorities: { value: Priority; label: string }[] = [
 export default function TicketModal({
   isOpen,
   onClose,
+  onCreated,
   relatedEntity,
 }: TicketModalProps) {
   const [category, setCategory] = useState<Category>("");
@@ -55,6 +58,8 @@ export default function TicketModal({
   const [description, setDescription] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [status, setStatus] = useState<Status>("idle");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -77,8 +82,26 @@ export default function TicketModal({
 
   const handleSubmit = async () => {
     if (!category || !priority || !title || !description) return;
-    // await fetch("/api/tickets", { method: "POST", body: JSON.stringify({ category, priority, title, description, relatedEntity }) });
-    setStatus("success");
+    setIsSubmitting(true);
+    setErrorMessage("");
+    try {
+      await createSupportTicket({
+        title,
+        description,
+        department: category,
+        priority,
+        relatedEntityType: relatedEntity?.type,
+        relatedEntityId: relatedEntity?.id,
+        relatedEntityLabel: relatedEntity?.label,
+      });
+      setStatus("success");
+      onCreated?.();
+    } catch {
+      setErrorMessage("Something went wrong while submitting your ticket. Please try again.");
+      setStatus("error");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const isFormValid = category && priority && title && description;
@@ -313,6 +336,10 @@ export default function TicketModal({
                 )}
               </div>
 
+              {errorMessage && (
+                <p className="text-xs text-danger">{errorMessage}</p>
+              )}
+
               {/* Actions */}
               <div className="flex gap-2 pt-1">
                 <Button
@@ -328,9 +355,9 @@ export default function TicketModal({
                   size="md"
                   className="flex-1 justify-center"
                   onClick={handleSubmit}
-                  disabled={!isFormValid}
+                  disabled={!isFormValid || isSubmitting}
                 >
-                  Submit ticket
+                  {isSubmitting ? "Submitting..." : "Submit ticket"}
                 </Button>
               </div>
             </div>

@@ -1,44 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import TicketModal from "@/components/ui/TicketModal";
 import type { BadgeVariant } from "@/types";
-
-type TicketDepartment =
-  | "technical_support"
-  | "billing"
-  | "account"
-  | "product_analysis"
-  | "amazon_connection"
-  | "other";
-
-type TicketPriority = "low" | "medium" | "high" | "critical";
-
-type TicketStatus =
-  | "open"
-  | "pending"
-  | "assigned"
-  | "in_progress"
-  | "fixed"
-  | "closed"
-  | "reopened";
-
-interface Ticket {
-  id: string;
-  title: string;
-  department: TicketDepartment;
-  priority: TicketPriority;
-  status: TicketStatus;
-  date: string;
-  relatedEntity?: {
-    type: "product" | "order" | "import";
-    id: string;
-    label: string;
-  };
-}
+import {
+  getSupportTickets,
+  type SupportTicket,
+  type TicketDepartment,
+  type TicketPriority,
+  type TicketStatus,
+} from "@/lib/services/supportTicketsService";
 
 const departmentConfig: Record<
   TicketDepartment,
@@ -75,63 +49,26 @@ const statusConfig: Record<
   reopened: { label: "Reopened", variant: "danger" },
 };
 
-// Backend hazır olduğunda API'den gelecek
-const mockTickets: Ticket[] = [
-  {
-    id: "TK-005",
-    title: "Amazon connection keeps disconnecting",
-    department: "amazon_connection",
-    priority: "high",
-    status: "assigned",
-    date: "May 20, 2026",
-    relatedEntity: {
-      type: "import",
-      id: "IMP-012",
-      label: "Nike Supplier List",
-    },
-  },
-  {
-    id: "TK-004",
-    title: "Cannot access dashboard after login",
-    department: "technical_support",
-    priority: "critical",
-    status: "in_progress",
-    date: "May 17, 2026",
-  },
-  {
-    id: "TK-003",
-    title: "Charged twice for Pro plan",
-    department: "billing",
-    priority: "high",
-    status: "pending",
-    date: "May 14, 2026",
-  },
-  {
-    id: "TK-002",
-    title: "Add bulk export for sourcing lists",
-    department: "product_analysis",
-    priority: "medium",
-    status: "open",
-    date: "May 10, 2026",
-    relatedEntity: {
-      type: "product",
-      id: "ASIN-B08XYZ",
-      label: "Nike Air Max 90",
-    },
-  },
-  {
-    id: "TK-001",
-    title: "Product search returning wrong results",
-    department: "technical_support",
-    priority: "low",
-    status: "fixed",
-    date: "May 5, 2026",
-  },
-];
-
 export default function SupportPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
   const router = useRouter();
+
+  const loadTickets = useCallback(() => {
+    return getSupportTickets()
+      .then((data) => {
+        setTickets(data);
+        setError("");
+      })
+      .catch(() => setError("Destek talepleri yüklenirken bir hata oluştu."))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    loadTickets();
+  }, [loadTickets]);
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-10">
@@ -170,80 +107,96 @@ export default function SupportPage() {
         </Button>
       </div>
 
-      <div className="bg-card-bg border border-border rounded-2xl overflow-hidden">
-        <table className="w-full">
-          <thead>
-            <tr className="bg-section-bg border-b border-border">
-              <th className="text-left text-xs font-medium text-muted uppercase tracking-widest px-5 py-3">
-                Ticket
-              </th>
-              <th className="text-left text-xs font-medium text-muted uppercase tracking-widest px-5 py-3">
-                Department
-              </th>
-              <th className="text-left text-xs font-medium text-muted uppercase tracking-widest px-5 py-3">
-                Priority
-              </th>
-              <th className="text-left text-xs font-medium text-muted uppercase tracking-widest px-5 py-3">
-                Status
-              </th>
-              <th className="text-left text-xs font-medium text-muted uppercase tracking-widest px-5 py-3">
-                Date
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {mockTickets.map((ticket, index) => (
-              <tr
-                key={ticket.id}
-                onClick={() => router.push(`/dashboard/support/${ticket.id}`)}
-                className={`cursor-pointer hover:bg-section-bg transition-colors duration-150 ${
-                  index !== mockTickets.length - 1
-                    ? "border-b border-border"
-                    : ""
-                }`}
-              >
-                <td className="px-5 py-4">
-                  <div className="text-sm font-medium text-heading">
-                    {ticket.title}
-                  </div>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-xs text-muted">#{ticket.id}</span>
-                    {ticket.relatedEntity && (
-                      <>
-                        <span className="text-xs text-border">·</span>
-                        <span className="text-xs text-muted capitalize">
-                          {ticket.relatedEntity.type}:
-                        </span>
-                        <span className="text-xs text-primary truncate max-w-36">
-                          {ticket.relatedEntity.label}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </td>
-                <td className="px-5 py-4">
-                  <Badge variant={departmentConfig[ticket.department].variant}>
-                    {departmentConfig[ticket.department].label}
-                  </Badge>
-                </td>
-                <td className="px-5 py-4">
-                  <Badge variant={priorityConfig[ticket.priority].variant}>
-                    {priorityConfig[ticket.priority].label}
-                  </Badge>
-                </td>
-                <td className="px-5 py-4">
-                  <Badge variant={statusConfig[ticket.status].variant}>
-                    {statusConfig[ticket.status].label}
-                  </Badge>
-                </td>
-                <td className="px-5 py-4 text-sm text-muted">{ticket.date}</td>
+      {isLoading ? (
+        <p className="text-sm text-muted">Loading tickets...</p>
+      ) : error ? (
+        <p className="text-sm text-danger">{error}</p>
+      ) : tickets.length === 0 ? (
+        <p className="text-sm text-muted">You haven&apos;t submitted any support tickets yet.</p>
+      ) : (
+        <div className="bg-card-bg border border-border rounded-2xl overflow-hidden">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-section-bg border-b border-border">
+                <th className="text-left text-xs font-medium text-muted uppercase tracking-widest px-5 py-3">
+                  Ticket
+                </th>
+                <th className="text-left text-xs font-medium text-muted uppercase tracking-widest px-5 py-3">
+                  Department
+                </th>
+                <th className="text-left text-xs font-medium text-muted uppercase tracking-widest px-5 py-3">
+                  Priority
+                </th>
+                <th className="text-left text-xs font-medium text-muted uppercase tracking-widest px-5 py-3">
+                  Status
+                </th>
+                <th className="text-left text-xs font-medium text-muted uppercase tracking-widest px-5 py-3">
+                  Date
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {tickets.map((ticket, index) => (
+                <tr
+                  key={ticket.id}
+                  onClick={() => router.push(`/dashboard/support/${ticket.id}`)}
+                  className={`cursor-pointer hover:bg-section-bg transition-colors duration-150 ${
+                    index !== tickets.length - 1 ? "border-b border-border" : ""
+                  }`}
+                >
+                  <td className="px-5 py-4">
+                    <div className="text-sm font-medium text-heading">
+                      {ticket.title}
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-xs text-muted">#{ticket.id}</span>
+                      {ticket.relatedEntityType && (
+                        <>
+                          <span className="text-xs text-border">·</span>
+                          <span className="text-xs text-muted capitalize">
+                            {ticket.relatedEntityType}:
+                          </span>
+                          <span className="text-xs text-primary truncate max-w-36">
+                            {ticket.relatedEntityLabel}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-5 py-4">
+                    <Badge variant={departmentConfig[ticket.department].variant}>
+                      {departmentConfig[ticket.department].label}
+                    </Badge>
+                  </td>
+                  <td className="px-5 py-4">
+                    <Badge variant={priorityConfig[ticket.priority].variant}>
+                      {priorityConfig[ticket.priority].label}
+                    </Badge>
+                  </td>
+                  <td className="px-5 py-4">
+                    <Badge variant={statusConfig[ticket.status].variant}>
+                      {statusConfig[ticket.status].label}
+                    </Badge>
+                  </td>
+                  <td className="px-5 py-4 text-sm text-muted">
+                    {new Date(ticket.created_at).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
-      <TicketModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+      <TicketModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onCreated={loadTickets}
+      />
     </div>
   );
 }

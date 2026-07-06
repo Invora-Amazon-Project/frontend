@@ -1,4 +1,5 @@
 import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
+import { AxiosError } from "axios";
 import {
   loginService,
   registerService,
@@ -10,6 +11,7 @@ import {
   ResetPasswordPayload,
   AuthResponse,
 } from "./authService";
+import { getStoredTokens, setStoredTokens, clearStoredTokens } from "./tokenStorage";
 
 interface AuthState {
   user: AuthResponse["user"] | null;
@@ -25,10 +27,12 @@ interface AuthState {
   resetPasswordSuccess: boolean;
 }
 
+const storedTokens = getStoredTokens();
+
 const initialState: AuthState = {
   user: null,
-  accessToken: null,
-  refreshToken: null,
+  accessToken: storedTokens.accessToken,
+  refreshToken: storedTokens.refreshToken,
   loading: false,
   error: null,
   forgotPasswordLoading: false,
@@ -39,19 +43,23 @@ const initialState: AuthState = {
   resetPasswordSuccess: false,
 };
 
+function extractErrorMessage(err: AxiosError<{ message?: string }>): string {
+  return err.response?.data?.message ?? err.message;
+}
+
 export const login = createAsyncThunk("auth/login", async (payload: LoginPayload, { rejectWithValue }) => {
   try {
     return await loginService(payload);
-  } catch (err: any) {
-    return rejectWithValue(err.message);
+  } catch (err) {
+    return rejectWithValue(extractErrorMessage(err as AxiosError<{ message?: string }>));
   }
 });
 
 export const register = createAsyncThunk("auth/register", async (payload: RegisterPayload, { rejectWithValue }) => {
   try {
     return await registerService(payload);
-  } catch (err: any) {
-    return rejectWithValue(err.message);
+  } catch (err) {
+    return rejectWithValue(extractErrorMessage(err as AxiosError<{ message?: string }>));
   }
 });
 
@@ -60,8 +68,8 @@ export const forgotPassword = createAsyncThunk(
   async (payload: ForgotPasswordPayload, { rejectWithValue }) => {
     try {
       return await forgotPasswordService(payload);
-    } catch (err: any) {
-      return rejectWithValue(err.message);
+    } catch (err) {
+      return rejectWithValue(extractErrorMessage(err as AxiosError<{ message?: string }>));
     }
   }
 );
@@ -71,8 +79,8 @@ export const resetPassword = createAsyncThunk(
   async (payload: ResetPasswordPayload, { rejectWithValue }) => {
     try {
       await resetPasswordService(payload);
-    } catch (err: any) {
-      return rejectWithValue(err.message);
+    } catch (err) {
+      return rejectWithValue(extractErrorMessage(err as AxiosError<{ message?: string }>));
     }
   }
 );
@@ -86,6 +94,12 @@ const authSlice = createSlice({
       state.accessToken = null;
       state.refreshToken = null;
       state.error = null;
+      clearStoredTokens();
+    },
+    setTokens(state, action: PayloadAction<{ accessToken: string; refreshToken: string }>) {
+      state.accessToken = action.payload.accessToken;
+      state.refreshToken = action.payload.refreshToken;
+      setStoredTokens(action.payload.accessToken, action.payload.refreshToken);
     },
     clearError(state) {
       state.error = null;
@@ -108,6 +122,7 @@ const authSlice = createSlice({
         state.accessToken = action.payload.accessToken;
         state.refreshToken = action.payload.refreshToken;
         state.user = action.payload.user ?? null;
+        setStoredTokens(action.payload.accessToken, action.payload.refreshToken);
       })
       .addCase(login.rejected, (state, action) => {
         state.loading = false;
@@ -122,6 +137,7 @@ const authSlice = createSlice({
         state.accessToken = action.payload.accessToken;
         state.refreshToken = action.payload.refreshToken;
         state.user = action.payload.user ?? null;
+        setStoredTokens(action.payload.accessToken, action.payload.refreshToken);
       })
       .addCase(register.rejected, (state, action) => {
         state.loading = false;
@@ -162,5 +178,6 @@ const authSlice = createSlice({
   },
 });
 
-export const { logout, clearError, clearForgotPasswordState, clearResetPasswordState } = authSlice.actions;
+export const { logout, setTokens, clearError, clearForgotPasswordState, clearResetPasswordState } =
+  authSlice.actions;
 export default authSlice.reducer;
