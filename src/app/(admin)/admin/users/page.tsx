@@ -3,29 +3,31 @@
 import { useEffect, useState } from "react";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
-import StatusBadge from "@/components/admin/StatusBadge";
 import FilterTabs from "@/components/admin/FilterTabs";
-import type { AdminUser, PlanName, UserStatus } from "@/types";
+import type { PlanName } from "@/types";
 import {
   getNewsletterSubscribers,
   deleteNewsletterSubscriber,
   type NewsletterSubscriber,
 } from "@/lib/newsletterService";
+import {
+  getAdminUsers,
+  getUserSubscription,
+} from "@/lib/services/adminUsersService";
 
-const mockUsers: AdminUser[] = [
-  { id: "1", name: "Sarah Johnson", email: "sarah.johnson@example.com", plan: "pro", creditBalance: 340, status: "active", joinedDate: "2025-01-14", role: "user" },
-  { id: "2", name: "Marcus Chen", email: "marcus.chen@example.com", plan: "team", creditBalance: 1200, status: "active", joinedDate: "2025-02-03", role: "user" },
-  { id: "3", name: "Priya Nair", email: "priya.nair@example.com", plan: "starter", creditBalance: 80, status: "trial", joinedDate: "2025-05-20", role: "user" },
-  { id: "4", name: "James Whitmore", email: "james.whitmore@example.com", plan: "pro", creditBalance: 0, status: "blocked", joinedDate: "2024-11-09", role: "user" },
-  { id: "5", name: "Lena Fischer", email: "lena.fischer@example.com", plan: "starter", creditBalance: 45, status: "trial", joinedDate: "2025-06-01", role: "user" },
-  { id: "6", name: "Omar Hassan", email: "omar.hassan@example.com", plan: "team", creditBalance: 870, status: "active", joinedDate: "2024-09-17", role: "user" },
-  { id: "7", name: "Chloe Dupont", email: "chloe.dupont@example.com", plan: "pro", creditBalance: 210, status: "active", joinedDate: "2025-03-28", role: "user" },
-  { id: "8", name: "Ravi Patel", email: "ravi.patel@example.com", plan: "starter", creditBalance: 15, status: "blocked", joinedDate: "2025-04-11", role: "user" },
-];
+interface UserRow {
+  id: string;
+  name: string;
+  email: string;
+  joinedDate?: string;
+  planName?: string;
+  planPrice?: number;
+  subscriptionStatus?: string;
+}
 
 const TABS = ["All", "Active", "Trial", "Blocked", "Waitlisted"];
 
-const planStatusMap: Record<string, UserStatus> = {
+const statusTabMap: Record<string, string> = {
   Active: "active",
   Trial: "trial",
   Blocked: "blocked",
@@ -40,6 +42,9 @@ export default function UsersPage() {
   const [form, setForm] = useState(defaultForm);
   const [waitlist, setWaitlist] = useState<NewsletterSubscriber[]>([]);
   const [waitlistError, setWaitlistError] = useState(false);
+  const [users, setUsers] = useState<UserRow[]>([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(true);
+  const [usersError, setUsersError] = useState(false);
 
   useEffect(() => {
     if (activeTab !== "Waitlisted") return;
@@ -48,11 +53,36 @@ export default function UsersPage() {
       .catch(() => setWaitlistError(true));
   }, [activeTab]);
 
+  useEffect(() => {
+    getAdminUsers()
+      .then(async (list) => {
+        const rows = await Promise.all(
+          list.map(async (u): Promise<UserRow> => {
+            const subscription = await getUserSubscription(u.id).catch(() => null);
+            return {
+              id: u.id,
+              name: u.name ?? u.email,
+              email: u.email,
+              joinedDate: u.created_at,
+              planName: subscription?.plan?.name,
+              planPrice: subscription?.plan?.price,
+              subscriptionStatus: subscription?.status,
+            };
+          })
+        );
+        setUsers(rows);
+        setUsersError(false);
+      })
+      .catch(() => setUsersError(true))
+      .finally(() => setIsLoadingUsers(false));
+  }, []);
+
   const isWaitlistTab = activeTab === "Waitlisted";
 
-  const filtered = mockUsers.filter((u) => {
+  const filtered = users.filter((u) => {
     const matchesTab =
-      activeTab === "All" || u.status === planStatusMap[activeTab];
+      activeTab === "All" ||
+      u.subscriptionStatus?.toLowerCase() === statusTabMap[activeTab];
     const matchesSearch =
       search.trim() === "" ||
       u.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -116,8 +146,8 @@ export default function UsersPage() {
               <tr className="border-b border-border bg-section-bg">
                 <th className="text-left px-5 py-3 text-muted font-medium">User</th>
                 <th className="text-left px-5 py-3 text-muted font-medium">Plan</th>
-                <th className="text-left px-5 py-3 text-muted font-medium">Credits</th>
-                <th className="text-left px-5 py-3 text-muted font-medium">Status</th>
+                <th className="text-left px-5 py-3 text-muted font-medium">Price</th>
+                <th className="text-left px-5 py-3 text-muted font-medium">Subscription Status</th>
                 <th className="text-left px-5 py-3 text-muted font-medium">Joined</th>
                 <th className="text-left px-5 py-3 text-muted font-medium">Actions</th>
               </tr>
@@ -174,16 +204,30 @@ export default function UsersPage() {
                       <p className="text-muted text-xs mt-0.5">{user.email}</p>
                     </td>
                     <td className="px-5 py-3.5">
-                      <span className="bg-primary-light text-primary text-xs rounded-full px-2.5 py-0.5 capitalize">
-                        {user.plan}
-                      </span>
+                      {user.planName ? (
+                        <span className="bg-primary-light text-primary text-xs rounded-full px-2.5 py-0.5 capitalize">
+                          {user.planName}
+                        </span>
+                      ) : (
+                        <span className="text-muted text-xs italic">No plan</span>
+                      )}
                     </td>
-                    <td className="px-5 py-3.5 text-body">{user.creditBalance.toLocaleString()}</td>
+                    <td className="px-5 py-3.5 text-body">
+                      {user.planPrice != null ? `$${user.planPrice.toLocaleString()}` : "—"}
+                    </td>
                     <td className="px-5 py-3.5">
-                      <StatusBadge status={user.status} />
+                      {user.subscriptionStatus ? (
+                        <span className="bg-section-bg text-muted text-xs rounded-full px-2.5 py-0.5 capitalize">
+                          {user.subscriptionStatus}
+                        </span>
+                      ) : (
+                        <span className="text-muted text-xs italic">—</span>
+                      )}
                     </td>
                     <td className="px-5 py-3.5 text-muted">
-                      {new Date(user.joinedDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                      {user.joinedDate
+                        ? new Date(user.joinedDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+                        : "—"}
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
@@ -196,7 +240,21 @@ export default function UsersPage() {
                     </td>
                   </tr>
                 ))}
-                {filtered.length === 0 && (
+                {isLoadingUsers && (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-10 text-center text-muted text-sm">
+                      Loading users...
+                    </td>
+                  </tr>
+                )}
+                {!isLoadingUsers && usersError && (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-10 text-center text-rose text-sm">
+                      Failed to load users.
+                    </td>
+                  </tr>
+                )}
+                {!isLoadingUsers && !usersError && filtered.length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-5 py-10 text-center text-muted text-sm">
                       No users match your search.
@@ -214,7 +272,7 @@ export default function UsersPage() {
         <p className="text-muted text-sm">
           {isWaitlistTab
             ? `Showing 1–${filteredWaitlist.length} of ${waitlist.length} waitlist subscribers`
-            : `Showing 1–${filtered.length} of 48 users`}
+            : `Showing 1–${filtered.length} of ${users.length} users`}
         </p>
         <div className="flex gap-2">
           <Button variant="outline" size="sm">Prev</Button>
