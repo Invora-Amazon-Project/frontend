@@ -16,12 +16,25 @@ export interface GetAdminUsersParams {
   limit?: number;
 }
 
-export async function getAdminUsers(params: GetAdminUsersParams = {}) {
-  const res = await axiosInstance.get<AdminUserListItem[] | { data: AdminUserListItem[] }>(
-    "/admin/users",
-    { params }
-  );
-  return Array.isArray(res.data) ? res.data : res.data.data;
+export interface PaginatedUsersResponse {
+  data: AdminUserListItem[];
+  total: number;
+}
+
+export async function getAdminUsers(
+  params: GetAdminUsersParams = {}
+): Promise<PaginatedUsersResponse> {
+  const res = await axiosInstance.get<
+    AdminUserListItem[] | { data: AdminUserListItem[]; total?: number }
+  >("/admin/users", { params });
+
+  if (Array.isArray(res.data)) {
+    return { data: res.data, total: res.data.length };
+  }
+  return {
+    data: res.data.data,
+    total: res.data.total ?? res.data.data.length,
+  };
 }
 
 export interface SubscriptionPlanInfo {

@@ -13,6 +13,7 @@ import {
 import {
   getAdminUsers,
   getUserSubscription,
+  type MembershipRole,
 } from "@/lib/services/adminUsersService";
 
 interface UserRow {
@@ -26,6 +27,7 @@ interface UserRow {
 }
 
 const TABS = ["All", "Active", "Trial", "Blocked", "Waitlisted"];
+const PAGE_SIZE = 10;
 
 const statusTabMap: Record<string, string> = {
   Active: "active",
@@ -33,11 +35,22 @@ const statusTabMap: Record<string, string> = {
   Blocked: "blocked",
 };
 
+const ROLE_OPTIONS: { label: string; value: MembershipRole | "" }[] = [
+  { label: "All Roles", value: "" },
+  { label: "Owner", value: "OWNER" },
+  { label: "Admin", value: "ADMIN" },
+  { label: "Staff", value: "STAFF" },
+  { label: "Customer", value: "CUSTOMER" },
+];
+
 const defaultForm = { name: "", email: "", plan: "starter" as PlanName, credits: 100 };
 
 export default function UsersPage() {
   const [activeTab, setActiveTab] = useState("All");
   const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState<MembershipRole | "">("");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(defaultForm);
   const [waitlist, setWaitlist] = useState<NewsletterSubscriber[]>([]);
@@ -54,8 +67,17 @@ export default function UsersPage() {
   }, [activeTab]);
 
   useEffect(() => {
-    getAdminUsers()
-      .then(async (list) => {
+    if (activeTab === "Waitlisted") return;
+    setIsLoadingUsers(true);
+    setUsersError(false);
+
+    getAdminUsers({
+      page,
+      limit: PAGE_SIZE,
+      ...(roleFilter ? { role: roleFilter } : {}),
+    })
+      .then(async ({ data: list, total: serverTotal }) => {
+        setTotal(serverTotal);
         const rows = await Promise.all(
           list.map(async (u): Promise<UserRow> => {
             const subscription = await getUserSubscription(u.id).catch(() => null);
@@ -71,11 +93,15 @@ export default function UsersPage() {
           })
         );
         setUsers(rows);
-        setUsersError(false);
       })
       .catch(() => setUsersError(true))
       .finally(() => setIsLoadingUsers(false));
-  }, []);
+  }, [page, roleFilter, activeTab]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [roleFilter, activeTab]);
 
   const isWaitlistTab = activeTab === "Waitlisted";
 
@@ -93,6 +119,10 @@ export default function UsersPage() {
   const filteredWaitlist = waitlist.filter(
     (w) => search.trim() === "" || w.email.toLowerCase().includes(search.toLowerCase())
   );
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const pageEnd = Math.min(page * PAGE_SIZE, total);
 
   async function handleRemoveWaitlistSubscriber(id: string, email: string) {
     if (!window.confirm(`Remove ${email} from the waitlist?`)) return;
@@ -121,15 +151,30 @@ export default function UsersPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <FilterTabs tabs={TABS} activeTab={activeTab} onTabChange={setActiveTab} />
-        <input
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name or email..."
-          className="border border-border rounded-lg px-3 py-2 text-sm bg-card-bg text-body placeholder:text-placeholder outline-none focus:border-primary transition-colors w-64"
-        />
+        <div className="flex items-center gap-3">
+          {!isWaitlistTab && (
+            <select
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value as MembershipRole | "")}
+              className="border border-border rounded-lg px-3 py-2 text-sm bg-card-bg text-body outline-none focus:border-primary transition-colors"
+            >
+              {ROLE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          )}
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name or email..."
+            className="border border-border rounded-lg px-3 py-2 text-sm bg-card-bg text-body placeholder:text-placeholder outline-none focus:border-primary transition-colors w-64"
+          />
+        </div>
       </div>
 
       {/* Table */}
@@ -272,12 +317,31 @@ export default function UsersPage() {
         <p className="text-muted text-sm">
           {isWaitlistTab
             ? `Showing 1–${filteredWaitlist.length} of ${waitlist.length} waitlist subscribers`
-            : `Showing 1–${filtered.length} of ${users.length} users`}
+            : `Showing ${pageStart}–${pageEnd} of ${total} users`}
         </p>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm">Prev</Button>
-          <Button variant="outline" size="sm">Next</Button>
-        </div>
+        {!isWaitlistTab && (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => p - 1)}
+              disabled={page <= 1}
+            >
+              Prev
+            </Button>
+            <span className="text-muted text-sm px-1">
+              {page} / {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => p + 1)}
+              disabled={page >= totalPages}
+            >
+              Next
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Create User Modal */}

@@ -1,4 +1,7 @@
+import axios from "axios";
 import { axiosInstance } from "@/lib/authService";
+
+const BASE_URL = "https://backend-2n7w.onrender.com";
 
 export interface NewsletterSubscribePayload {
   email: string;
@@ -8,7 +11,9 @@ export interface NewsletterSubscribePayload {
 export async function subscribeNewsletterService(
   payload: NewsletterSubscribePayload
 ): Promise<void> {
-  await axiosInstance.post("/newsletter-subscribers", payload);
+  await axios.post(`${BASE_URL}/newsletter-subscribers`, payload, {
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 export interface NewsletterSubscriber {
