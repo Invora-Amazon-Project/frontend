@@ -144,7 +144,7 @@ export default function PromoCodesPage() {
                 <button
                   type="button"
                   onClick={() => setForm({ ...form, code: generateCode() })}
-                  className="px-3 py-2 text-xs font-medium border border-border rounded-lg text-body bg-section-bg hover:border-primary hover:text-primary transition-colors whitespace-nowrap"
+                  className="px-3 py-2 text-xs font-medium border border-border rounded-lg text-body bg-section-bg hover:border-primary hover:text-primary transition-colors whitespace-nowrap cursor-pointer"
                 >
                   Generate
                 </button>
@@ -159,14 +159,14 @@ export default function PromoCodesPage() {
                   <button
                     type="button"
                     onClick={() => setForm({ ...form, discountType: "percentage" })}
-                    className={`px-3 py-2 text-sm font-medium transition-colors ${form.discountType === "percentage" ? "bg-primary text-white" : "bg-card-bg text-body hover:bg-section-bg"}`}
+                    className={`px-3 py-2 text-sm font-medium transition-colors cursor-pointer ${form.discountType === "percentage" ? "bg-primary text-white" : "bg-card-bg text-body hover:bg-section-bg"}`}
                   >
                     %
                   </button>
                   <button
                     type="button"
                     onClick={() => setForm({ ...form, discountType: "fixed" })}
-                    className={`px-3 py-2 text-sm font-medium transition-colors border-l border-border ${form.discountType === "fixed" ? "bg-primary text-white" : "bg-card-bg text-body hover:bg-section-bg"}`}
+                    className={`px-3 py-2 text-sm font-medium transition-colors border-l border-border cursor-pointer ${form.discountType === "fixed" ? "bg-primary text-white" : "bg-card-bg text-body hover:bg-section-bg"}`}
                   >
                     $ fixed
                   </button>

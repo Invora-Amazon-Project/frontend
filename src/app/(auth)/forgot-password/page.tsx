@@ -1,110 +1,148 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
-import { useAppDispatch, useAppSelector } from "@/lib/hooks";
-import { forgotPassword, clearForgotPasswordState } from "@/lib/authSlice";
+import Button from "@/components/ui/Button";
 
-/* ---------- Zod schema ---------- */
-const forgotPasswordSchema = z.object({
-  email: z.string().email("Please enter a valid email address"),
-});
+type PageState = "enter_email" | "email_sent";
 
-type ForgotPasswordFormData = z.infer<typeof forgotPasswordSchema>;
-
-/* ---------- Page ---------- */
 export default function ForgotPasswordPage() {
-  const router = useRouter();
-  const dispatch = useAppDispatch();
-  const { forgotPasswordLoading, forgotPasswordError, forgotPasswordSuccess } = useAppSelector(
-    (state) => state.auth
-  );
+  const [pageState, setPageState] = useState<PageState>("enter_email");
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<ForgotPasswordFormData>({
-    resolver: zodResolver(forgotPasswordSchema),
-  });
+  const handleSend = async () => {
+    if (!email) return;
+    setLoading(true);
+    // TODO: Replace mock delay with real API call to auth service
+    await new Promise((res) => setTimeout(res, 1500));
+    setLoading(false);
+    setPageState("email_sent");
+  };
 
-  const onSubmit = async (data: ForgotPasswordFormData) => {
-    dispatch(clearForgotPasswordState());
-    const result = await dispatch(forgotPassword(data));
-    if (forgotPassword.fulfilled.match(result) && result.payload.resetToken) {
-      router.push(`/reset-password?token=${encodeURIComponent(result.payload.resetToken)}`);
-    }
+  const handleResend = async () => {
+    setLoading(true);
+    // TODO: Replace mock delay with real API call to auth service
+    await new Promise((res) => setTimeout(res, 1500));
+    setLoading(false);
   };
 
   return (
     <main className="flex min-h-[calc(100vh-8rem)] items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
 
-        {/* Back to Login */}
+        {/* Back to Homepage */}
         <Link
-          href="/login"
+          href="/"
           className="flex items-center gap-1.5 text-sm text-muted hover:text-primary mb-6 transition-colors cursor-pointer"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M19 12H5M12 5l-7 7 7 7" />
           </svg>
-          Back to Sign in
+          Back to Homepage
         </Link>
 
         {/* Card */}
         <div className="rounded-2xl border border-border bg-card-bg p-8 shadow-sm">
 
-          {/* Header */}
-          <div className="mb-8 text-center">
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-light">
-              <svg className="h-6 w-6 text-primary" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 5.25a3 3 0 0 1 3 3m3 0a6 6 0 0 1-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1 1 21.75 8.25Z" />
-              </svg>
-            </div>
-            <h1 className="text-xl font-semibold text-heading">Forgot password?</h1>
-            <p className="mt-1 text-sm text-muted">We&apos;ll send you a reset link</p>
-          </div>
+          {pageState === "enter_email" ? (
+            <>
+              {/* Header */}
+              <div className="mb-8 text-center">
+                <p className="text-heading font-bold text-xl mb-4">MarginLane</p>
+                <h1 className="text-heading font-semibold text-2xl">Forgot your password?</h1>
+                <p className="mt-2 text-muted text-sm">
+                  Enter your email address and we&apos;ll send you a reset link.
+                </p>
+              </div>
 
-          {forgotPasswordSuccess ? (
-            <div className="rounded-xl border border-border bg-mint-bg px-4 py-3 text-sm text-mint">
-              If an account exists for that email, a password reset link has been sent.
-            </div>
+              {/* Fields */}
+              <div className="space-y-5">
+                <Input
+                  label="Email address"
+                  id="email"
+                  type="email"
+                  placeholder="example@email.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+
+                <Button
+                  variant="primary"
+                  size="lg"
+                  className="w-full"
+                  disabled={loading || !email}
+                  onClick={handleSend}
+                >
+                  {loading ? "Sending…" : "Send Reset Link"}
+                </Button>
+              </div>
+
+              <p className="mt-6 text-center">
+                <Link href="/login" className="text-primary text-sm hover:underline">
+                  Back to login
+                </Link>
+              </p>
+            </>
           ) : (
-            <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-5">
-              <Input
-                label="Email"
-                id="email"
-                type="email"
-                placeholder="example@email.com"
-                error={errors.email?.message}
-                {...register("email")}
-              />
-
-              {forgotPasswordError && (
-                <div className="rounded-xl border border-rose-200 bg-rose-bg px-4 py-3 text-sm text-rose-600">
-                  {forgotPasswordError}
+            <>
+              {/* Email sent state */}
+              <div className="flex flex-col items-center text-center">
+                <div className="w-16 h-16 rounded-full bg-mint-bg flex items-center justify-center mb-4">
+                  <svg
+                    width="32"
+                    height="32"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="text-mint"
+                  >
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
                 </div>
-              )}
 
-              <Button type="submit" variant="primary" size="lg" className="w-full" disabled={forgotPasswordLoading}>
-                {forgotPasswordLoading ? "Sending…" : "Send reset link"}
-              </Button>
-            </form>
+                <h1 className="text-heading font-semibold text-2xl">Check your email</h1>
+                <p className="mt-2 text-muted text-sm max-w-xs">
+                  We sent a reset link to{" "}
+                  <span className="font-medium text-body">{email}</span>. Check your inbox and
+                  follow the instructions.
+                </p>
+
+                <div className="w-full mt-8 space-y-3">
+                  <a
+                    href="https://mail.google.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block"
+                  >
+                    <Button variant="outline" size="lg" className="w-full">
+                      Open Gmail
+                    </Button>
+                  </a>
+
+                  <Button
+                    variant="ghost"
+                    size="lg"
+                    className="w-full"
+                    disabled={loading}
+                    onClick={handleResend}
+                  >
+                    {loading ? "Resending…" : "Resend email"}
+                  </Button>
+                </div>
+
+                <Link href="/login" className="mt-6 text-primary text-sm hover:underline">
+                  Back to login
+                </Link>
+              </div>
+            </>
           )}
-        </div>
 
-        {/* Footer */}
-        <p className="mt-6 text-center text-sm text-muted">
-          Remembered your password?{" "}
-          <Link href="/login" className="font-medium text-primary hover:text-primary-hover transition-colors duration-150">
-            Sign in
-          </Link>
-        </p>
+        </div>
       </div>
     </main>
   );

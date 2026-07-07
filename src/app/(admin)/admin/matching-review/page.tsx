@@ -166,13 +166,13 @@ export default function MatchingReviewPage() {
                         />
                         <button
                           onClick={() => saveOverride(match.id)}
-                          className="text-xs font-medium text-primary hover:underline whitespace-nowrap"
+                          className="text-xs font-medium text-primary hover:underline whitespace-nowrap cursor-pointer"
                         >
                           Save
                         </button>
                         <button
                           onClick={cancelOverride}
-                          className="text-xs font-medium text-muted hover:underline"
+                          className="text-xs font-medium text-muted hover:underline cursor-pointer"
                         >
                           ✕
                         </button>

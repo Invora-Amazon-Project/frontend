@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams, useRouter } from "next/navigation";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
 import Button from "@/components/ui/Button";
 import { plans, type Plan } from "@/lib/plan";
@@ -213,6 +213,12 @@ export default function ManagePlan() {
   const billingFromUrl = (searchParams.get("billing") as Billing) ?? "monthly";
   const resultFromUrl = searchParams.get("result") as "success" | "failed" | null;
 
+  const [from, setFrom] = useState("/dashboard");
+  useEffect(() => {
+    const stored = sessionStorage.getItem("manage-plan-from");
+    if (stored) setFrom(stored);
+  }, []);
+
   const defaultSelectedPlan =
     plans.find((p) => plans.indexOf(p) > currentIndex) ??
     plans.find((p) => p.name !== currentPlan.name) ??
@@ -264,7 +270,7 @@ export default function ManagePlan() {
     <div className="min-h-screen bg-page-bg py-12 px-6">
       <div className="max-w-3xl mx-auto">
         <Link
-          href="/dashboard"
+          href={from}
           className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-body transition-colors mb-8"
         >
           <svg
@@ -281,7 +287,7 @@ export default function ManagePlan() {
               strokeLinejoin="round"
             />
           </svg>
-          Back to dashboard
+          Back
         </Link>
 
         <div className="mb-2">
@@ -644,15 +650,15 @@ export default function ManagePlan() {
                 </div>
               )}
               <p className="text-xs text-muted">
-                Redirecting you to your dashboard…
+                Redirecting you back…
               </p>
               <Button
                 variant="primary"
                 size="md"
                 className="justify-center w-full mt-2"
-                onClick={() => router.push("/dashboard")}
+                onClick={() => router.push(from)}
               >
-                Go to dashboard
+                Go back
               </Button>
             </div>
 
@@ -706,10 +712,10 @@ export default function ManagePlan() {
                   Try again
                 </Button>
                 <Link
-                  href="/dashboard"
+                  href={from}
                   className="text-xs text-muted hover:text-body transition-colors text-center py-1"
                 >
-                  Back to dashboard
+                  Back
                 </Link>
               </div>
             </div>
