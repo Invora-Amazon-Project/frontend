@@ -52,7 +52,7 @@ export default function Navbar() {
           onClick={() => setIsMenuOpen((open) => !open)}
           aria-label="Toggle menu"
           aria-expanded={isMenuOpen}
-          className="text-heading flex h-9 w-9 items-center justify-center md:hidden"
+          className="text-heading flex h-9 w-9 items-center justify-center md:hidden cursor-pointer"
         >
           {isMenuOpen ? (
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

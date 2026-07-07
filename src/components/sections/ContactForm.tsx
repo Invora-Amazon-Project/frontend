@@ -238,7 +238,7 @@ export default function ContactForm() {
                         <button
                           type="button"
                           onClick={() => handleRemoveFile(index)}
-                          className="text-muted hover:text-heading transition-colors duration-150"
+                          className="text-muted hover:text-heading transition-colors duration-150 cursor-pointer"
                         >
                           <svg
                             width="12"
