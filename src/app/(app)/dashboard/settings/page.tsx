@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import Button from "@/components/ui/Button";
@@ -59,6 +59,14 @@ function Toggle({
 }
 
 export default function SettingsPage() {
+  return (
+    <Suspense fallback={null}>
+      <SettingsPageContent />
+    </Suspense>
+  );
+}
+
+function SettingsPageContent() {
   const searchParams = useSearchParams();
   const tabFromUrl = searchParams.get("tab") as TabKey | null;
   const initialTab = TABS.some((t) => t.key === tabFromUrl) ? (tabFromUrl as TabKey) : "profile";
