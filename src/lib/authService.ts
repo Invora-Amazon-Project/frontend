@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const BASE_URL = "https://backend-2n7w.onrender.com";
+const BASE_URL = "https://backend-2n7w.onrender.com/api";
 
 export const axiosInstance = axios.create({
   baseURL: BASE_URL,
@@ -72,4 +72,12 @@ export interface RefreshPayload {
 export async function refreshTokenService(payload: RefreshPayload): Promise<AuthResponse> {
   const res = await axiosInstance.post<AuthResponse>("/auth/refresh", payload);
   return res.data;
+}
+
+export interface LogoutPayload {
+  refreshToken: string;
+}
+
+export async function logoutService(payload: LogoutPayload): Promise<void> {
+  await axiosInstance.post("/auth/logout", payload);
 }

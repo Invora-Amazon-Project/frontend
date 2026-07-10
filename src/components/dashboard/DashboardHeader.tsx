@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import Button from "@/components/ui/Button";
+import { useAppDispatch } from "@/lib/hooks";
+import { logoutUser } from "@/lib/authSlice";
 
 const PATH_TITLES: Record<string, string> = {
   "/dashboard": "Home",
@@ -27,8 +29,15 @@ interface DashboardHeaderProps {
 
 export default function DashboardHeader({ onToggleSidebar }: DashboardHeaderProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const dispatch = useAppDispatch();
   const title = PATH_TITLES[pathname] ?? "Dashboard";
   const initial = USER_NAME.charAt(0).toUpperCase();
+
+  const handleLogout = async () => {
+    await dispatch(logoutUser());
+    router.push("/login");
+  };
 
   return (
     <header className="bg-card-bg border-b border-border h-16 w-full px-6 flex items-center justify-between">
@@ -76,6 +85,19 @@ export default function DashboardHeader({ onToggleSidebar }: DashboardHeaderProp
         >
           {initial}
         </Link>
+
+        <button
+          type="button"
+          onClick={handleLogout}
+          aria-label="Log out"
+          className="p-1.5 text-muted hover:text-rose transition-colors rounded-lg hover:bg-section-bg cursor-pointer"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            <polyline points="16 17 21 12 16 7" />
+            <line x1="21" y1="12" x2="9" y2="12" />
+          </svg>
+        </button>
       </div>
     </header>
   );
