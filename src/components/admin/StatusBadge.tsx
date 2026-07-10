@@ -3,6 +3,7 @@ const statusStyles: Record<string, string> = {
   paid: "bg-mint-bg text-mint font-medium",
   open: "bg-mint-bg text-mint font-medium",
   confirmed: "bg-mint-bg text-mint font-medium",
+  completed: "bg-mint-bg text-mint font-medium",
   blocked: "bg-rose-bg text-rose font-medium",
   failed: "bg-rose-bg text-rose font-medium",
   cancelled: "bg-rose-bg text-rose font-medium",
@@ -14,6 +15,7 @@ const statusStyles: Record<string, string> = {
   in_progress: "bg-primary-light text-primary font-medium",
   assigned: "bg-primary-light text-primary font-medium",
   review_carefully: "bg-primary-light text-primary font-medium",
+  processing: "bg-primary-light text-primary font-medium",
 };
 
 const defaultStyle = "bg-section-bg text-muted font-medium";
