@@ -54,8 +54,11 @@ function getMissingRequiredFields(mapping: ColumnMapping[]) {
 }
 
 /* ─── Step Indicator ─── */
-function StepIndicator({ current }: { current: Step }) {
-  const steps = ["Upload File", "Map Columns", "Import Complete"];
+function StepIndicator({ current, mode }: { current: Step; mode: "file" | "manual" | null }) {
+  const steps =
+    mode === "manual"
+      ? ["Enter Product Details", "Analysis"]
+      : ["Upload File", "Map Columns", "Import Complete"];
   return (
     <div className="flex items-center gap-0 mb-8">
       {steps.map((label, i) => {
@@ -142,6 +145,25 @@ function ImportPageContent() {
   const [isLoadingImport, setIsLoadingImport] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+
+  // ── Manual entry form state ──
+  const [manualForm, setManualForm] = useState({
+    amazon_title: "",
+    brand: "",
+    upc: "",
+    ean: "",
+    asin: "",
+    model_number: "",
+    category: "",
+    cost_price: "",
+    currency: "USD",
+    stock: "",
+    moq: "",
+    shipping_cost: "",
+  });
+  const [isSubmittingManual, setIsSubmittingManual] = useState(false);
+  const [manualError, setManualError] = useState<string | null>(null);
+  const [isOptionalOpen, setIsOptionalOpen] = useState(false);
 
   const canContinue = uploadMode === "manual" ? supplierName.trim().length > 0 : (!!selectedFile && supplierName.trim().length > 0);
 
@@ -246,11 +268,122 @@ function ImportPageContent() {
     setImportResult(null);
     setValidationError(null);
     setImportError(null);
+    setManualForm({
+      amazon_title: "",
+      brand: "",
+      upc: "",
+      ean: "",
+      asin: "",
+      model_number: "",
+      category: "",
+      cost_price: "",
+      currency: "USD",
+      stock: "",
+      moq: "",
+      shipping_cost: "",
+    });
+    setManualError(null);
+    setIsSubmittingManual(false);
+    setIsOptionalOpen(false);
+  };
+
+  const handleManualSubmit = async () => {
+    if (!supplierId) {
+      setManualError("Please select a supplier before continuing.");
+      return;
+    }
+
+    const missingFields: string[] = [];
+    if (!manualForm.amazon_title) missingFields.push("Product Title");
+    if (!manualForm.brand) missingFields.push("Brand");
+    if (!manualForm.cost_price) missingFields.push("Cost Price");
+    if (missingFields.length > 0) {
+      setManualError(`Missing required fields: ${missingFields.join(", ")}.`);
+      return;
+    }
+
+    setIsSubmittingManual(true);
+    setManualError(null);
+
+    try {
+      const productPayload: Record<string, string> = {
+        amazon_title: manualForm.amazon_title,
+        brand: manualForm.brand,
+      };
+      if (manualForm.upc) productPayload.upc = manualForm.upc;
+      if (manualForm.ean) productPayload.ean = manualForm.ean;
+      if (manualForm.asin) productPayload.asin = manualForm.asin;
+      if (manualForm.model_number) productPayload.model_number = manualForm.model_number;
+      if (manualForm.category) productPayload.category = manualForm.category;
+
+      // NOTE: asin is required by the API schema but manual entry may not have one.
+      // TODO: Confirm with backend how to handle manual products without ASIN —
+      // sending a placeholder until then.
+      if (!productPayload.asin) {
+        productPayload.asin = "PENDING_MATCH";
+      }
+
+      // TODO: Get token from Redux auth state using useAppSelector from "@/lib/hooks"
+      const token = "";
+      const productResponse = await fetch("/api/products", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(productPayload),
+      });
+
+      if (!productResponse.ok) {
+        const err = await productResponse.json();
+        throw new Error(err.message || "Could not create product");
+      }
+
+      const productData = await productResponse.json();
+      const productId = productData.id;
+
+      if (productId && supplierId) {
+        const supplierProductPayload: Record<string, string | number> = {
+          supplier_id: supplierId,
+          product_id: productId,
+          cost_price: parseFloat(manualForm.cost_price),
+          currency: manualForm.currency,
+          stock: manualForm.stock ? parseInt(manualForm.stock) : 0,
+          moq: manualForm.moq ? parseInt(manualForm.moq) : 1,
+        };
+        if (manualForm.shipping_cost) {
+          supplierProductPayload.shipping_cost = parseFloat(manualForm.shipping_cost);
+        }
+        if (manualForm.asin && manualForm.asin !== "PENDING_MATCH") {
+          supplierProductPayload.supplier_sku = manualForm.model_number || "";
+        }
+
+        await fetch("/api/supplier-products", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(supplierProductPayload),
+        });
+        // Note: we proceed even if this fails — product was created
+      }
+
+      if (productId) {
+        window.location.href = `/dashboard/analysis/${productId}`;
+      } else {
+        window.location.href = "/dashboard/analysis";
+      }
+    } catch (error) {
+      setManualError(error instanceof Error ? error.message : "Something went wrong. Please try again.");
+    } finally {
+      setIsSubmittingManual(false);
+    }
   };
 
   return (
     <div className="max-w-2xl mx-auto">
-      <StepIndicator current={step} />
+      <StepIndicator current={step} mode={uploadMode} />
 
       {/* ── STEP 1 ── */}
       {step === 1 && (
@@ -291,12 +424,19 @@ function ImportPageContent() {
               onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
               onDragLeave={() => setIsDragging(false)}
               onDrop={handleDrop}
-              className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
+              className={`relative border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
                 isDragging || uploadMode === "file"
-                  ? "border-primary bg-primary-light/20"
+                  ? "border-2 border-primary bg-primary-light/20"
                   : "border-border hover:border-primary hover:bg-primary-light/20"
               }`}
             >
+              {uploadMode === "file" && (
+                <div className="absolute top-3 right-3 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                </div>
+              )}
               <div className="flex justify-center mb-3 text-muted">
                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="16 16 12 12 8 16" />
@@ -319,12 +459,19 @@ function ImportPageContent() {
             {/* Option B — Manual */}
             <div
               onClick={() => setUploadMode("manual")}
-              className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
+              className={`relative border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
                 uploadMode === "manual"
-                  ? "border-primary bg-primary-light/20"
+                  ? "border-2 border-primary bg-primary-light/20"
                   : "border-border hover:border-primary hover:bg-primary-light/20"
               }`}
             >
+              {uploadMode === "manual" && (
+                <div className="absolute top-3 right-3 bg-primary text-white rounded-full w-5 h-5 flex items-center justify-center">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                </div>
+              )}
               <div className="flex justify-center mb-3 text-muted">
                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="10" />
@@ -337,66 +484,278 @@ function ImportPageContent() {
             </div>
           </div>
 
-          {/* File confirmation */}
-          {selectedFile && (
-            <div className="flex items-center gap-3 bg-section-bg border border-border rounded-lg px-4 py-3 mb-4">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-              </svg>
-              <div className="flex-1 min-w-0">
-                <p className="text-body text-sm font-medium truncate">{selectedFile.name}</p>
-                <p className="text-muted text-xs">{formatBytes(selectedFile.size)}</p>
+          {uploadMode !== "manual" && (
+            <>
+              {/* File confirmation */}
+              {selectedFile && (
+                <div className="flex items-center gap-3 bg-section-bg border border-border rounded-lg px-4 py-3 mb-4">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                  </svg>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-body text-sm font-medium truncate">{selectedFile.name}</p>
+                    <p className="text-muted text-xs">{formatBytes(selectedFile.size)}</p>
+                  </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setSelectedFile(null); setUploadMode(null); }}
+                    className="text-muted hover:text-rose transition-colors cursor-pointer"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+
+              {/* Supplier name */}
+              <div className="mb-6">
+                <label htmlFor="supplierName" className="block text-xs font-medium text-body mb-1.5">
+                  Supplier Name <span className="text-rose">*</span>
+                </label>
+                <input
+                  id="supplierName"
+                  type="text"
+                  placeholder="e.g. Guangzhou HomeGoods Co."
+                  value={supplierName}
+                  onChange={(e) => setSupplierName(e.target.value)}
+                  className="w-full px-4 py-2.5 text-sm text-body bg-page-bg border border-border rounded-lg outline-none transition-colors placeholder:text-placeholder focus:border-primary"
+                />
               </div>
-              <button
-                onClick={(e) => { e.stopPropagation(); setSelectedFile(null); setUploadMode(null); }}
-                className="text-muted hover:text-rose transition-colors cursor-pointer"
+
+              {validationError && (
+                <p className="text-rose text-sm mb-4">{validationError}</p>
+              )}
+
+              <Button
+                variant="primary"
+                size="lg"
+                className="w-full"
+                disabled={!canContinue || isLoadingPreview}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
+                {isLoadingPreview ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none">
+                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
+                      <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                    </svg>
+                    Analyzing file...
+                  </span>
+                ) : (
+                  "Continue →"
+                )}
+              </Button>
+            </>
+          )}
+
+          {uploadMode === "manual" && (
+            <div className="mt-6 transition-all duration-200">
+              <h3 className="text-heading font-semibold text-base">Product Details</h3>
+              <p className="text-muted text-sm mt-0.5 mb-5">
+                Enter the product information to start analysis. UPC or EAN is recommended for best matching accuracy.
+              </p>
+
+              {/* Required Information */}
+              <p className="text-muted text-xs font-semibold uppercase tracking-wider mb-3">
+                Required Information
+              </p>
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <div>
+                  <label className="block text-xs font-medium text-body mb-1.5">
+                    Product Title <span className="text-rose">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Oral-B Pro 3 Electric Toothbrush"
+                    value={manualForm.amazon_title}
+                    onChange={(e) => setManualForm((prev) => ({ ...prev, amazon_title: e.target.value }))}
+                    className="border border-border rounded-lg px-3 py-2 text-sm bg-page-bg w-full focus:outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-body mb-1.5">
+                    Brand <span className="text-rose">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Oral-B"
+                    value={manualForm.brand}
+                    onChange={(e) => setManualForm((prev) => ({ ...prev, brand: e.target.value }))}
+                    className="border border-border rounded-lg px-3 py-2 text-sm bg-page-bg w-full focus:outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-body mb-1.5">
+                    Cost Price <span className="text-rose">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={manualForm.cost_price}
+                    onChange={(e) => setManualForm((prev) => ({ ...prev, cost_price: e.target.value }))}
+                    className="border border-border rounded-lg px-3 py-2 text-sm bg-page-bg w-full focus:outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-body mb-1.5">
+                    Currency <span className="text-rose">*</span>
+                  </label>
+                  <select
+                    value={manualForm.currency}
+                    onChange={(e) => setManualForm((prev) => ({ ...prev, currency: e.target.value }))}
+                    className="border border-border rounded-lg px-3 py-2 text-sm bg-page-bg w-full focus:outline-none focus:border-primary"
+                  >
+                    {["USD", "EUR", "GBP", "TRY", "CAD", "AUD"].map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Matching Information */}
+              <p className="text-muted text-xs font-semibold uppercase tracking-wider mb-1">
+                Matching Information
+              </p>
+              <p className="text-muted text-xs mb-3">
+                Provide at least one identifier for accurate Amazon matching.
+              </p>
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-xs font-medium text-body mb-1.5">UPC Barcode</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 012345678901"
+                    value={manualForm.upc}
+                    onChange={(e) => setManualForm((prev) => ({ ...prev, upc: e.target.value }))}
+                    className="border border-border rounded-lg px-3 py-2 text-sm bg-page-bg w-full focus:outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-body mb-1.5">EAN Barcode</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 4210201432521"
+                    value={manualForm.ean}
+                    onChange={(e) => setManualForm((prev) => ({ ...prev, ean: e.target.value }))}
+                    className="border border-border rounded-lg px-3 py-2 text-sm bg-page-bg w-full focus:outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-body mb-1.5">ASIN (if known)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. B08X123456"
+                    value={manualForm.asin}
+                    onChange={(e) => setManualForm((prev) => ({ ...prev, asin: e.target.value }))}
+                    className="border border-border rounded-lg px-3 py-2 text-sm bg-page-bg w-full focus:outline-none focus:border-primary"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-body mb-1.5">Model Number</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. PRO3000BK"
+                    value={manualForm.model_number}
+                    onChange={(e) => setManualForm((prev) => ({ ...prev, model_number: e.target.value }))}
+                    className="border border-border rounded-lg px-3 py-2 text-sm bg-page-bg w-full focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+
+              {!manualForm.upc && !manualForm.ean && !manualForm.asin && (
+                <div className="bg-peach-bg border border-peach/30 rounded-lg p-3 text-sm text-peach mb-4">
+                  No barcode or ASIN provided — matching will use brand and title. Confidence may be lower.
+                </div>
+              )}
+
+              {/* Optional fields */}
+              <button
+                type="button"
+                onClick={() => setIsOptionalOpen((v) => !v)}
+                className="text-primary text-sm mb-3 cursor-pointer"
+              >
+                {isOptionalOpen ? "Hide optional fields ▲" : "Show optional fields ▼"}
               </button>
+
+              {isOptionalOpen && (
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-xs font-medium text-body mb-1.5">Category</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Health & Personal Care"
+                      value={manualForm.category}
+                      onChange={(e) => setManualForm((prev) => ({ ...prev, category: e.target.value }))}
+                      className="border border-border rounded-lg px-3 py-2 text-sm bg-page-bg w-full focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-body mb-1.5">Stock Quantity</label>
+                    <input
+                      type="number"
+                      placeholder="0"
+                      value={manualForm.stock}
+                      onChange={(e) => setManualForm((prev) => ({ ...prev, stock: e.target.value }))}
+                      className="border border-border rounded-lg px-3 py-2 text-sm bg-page-bg w-full focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-body mb-1.5">MOQ (Minimum Order Quantity)</label>
+                    <input
+                      type="number"
+                      placeholder="1"
+                      value={manualForm.moq}
+                      onChange={(e) => setManualForm((prev) => ({ ...prev, moq: e.target.value }))}
+                      className="border border-border rounded-lg px-3 py-2 text-sm bg-page-bg w-full focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-body mb-1.5">Shipping Cost</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={manualForm.shipping_cost}
+                      onChange={(e) => setManualForm((prev) => ({ ...prev, shipping_cost: e.target.value }))}
+                      className="border border-border rounded-lg px-3 py-2 text-sm bg-page-bg w-full focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {manualError && (
+                <div className="bg-rose-bg border border-rose/30 rounded-lg p-3 text-rose text-sm mb-4">
+                  {manualError}
+                </div>
+              )}
+
+              <Button
+                variant="primary"
+                size="lg"
+                className="w-full mt-6"
+                disabled={
+                  !manualForm.amazon_title ||
+                  !manualForm.brand ||
+                  !manualForm.cost_price ||
+                  isSubmittingManual
+                }
+                onClick={handleManualSubmit}
+              >
+                {isSubmittingManual ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none">
+                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
+                      <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                    </svg>
+                    Analyzing...
+                  </span>
+                ) : (
+                  "Analyze Product →"
+                )}
+              </Button>
             </div>
           )}
-
-          {/* Supplier name */}
-          <div className="mb-6">
-            <label htmlFor="supplierName" className="block text-xs font-medium text-body mb-1.5">
-              Supplier Name <span className="text-rose">*</span>
-            </label>
-            <input
-              id="supplierName"
-              type="text"
-              placeholder="e.g. Guangzhou HomeGoods Co."
-              value={supplierName}
-              onChange={(e) => setSupplierName(e.target.value)}
-              className="w-full px-4 py-2.5 text-sm text-body bg-page-bg border border-border rounded-lg outline-none transition-colors placeholder:text-placeholder focus:border-primary"
-            />
-          </div>
-
-          {validationError && (
-            <p className="text-rose text-sm mb-4">{validationError}</p>
-          )}
-
-          <Button
-            variant="primary"
-            size="lg"
-            className="w-full"
-            disabled={!canContinue || isLoadingPreview}
-            onClick={() => { if (uploadMode === "manual") setStep(2); }}
-          >
-            {isLoadingPreview ? (
-              <span className="flex items-center justify-center gap-2">
-                <svg className="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none">
-                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
-                  <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-                </svg>
-                Analyzing file...
-              </span>
-            ) : (
-              "Continue →"
-            )}
-          </Button>
         </div>
       )}
 
@@ -412,27 +771,6 @@ function ImportPageContent() {
           <p className="text-muted text-sm mb-6">
             We&apos;ve auto-detected the column mappings below. Review and correct if needed.
           </p>
-
-          {previewData.validation && previewData.validation.isValid === false && (
-            <div className="bg-rose-bg border border-rose/30 rounded-xl p-4 mb-4">
-              <div className="flex gap-2 items-start">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-rose shrink-0 mt-0.5">
-                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                  <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-                </svg>
-                <div>
-                  <p className="text-rose font-medium text-sm mb-2">Some required fields are not mapped:</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {[...previewData.validation.missingRequired, ...previewData.validation.missingOneOf].map((f) => (
-                      <span key={f} className="bg-rose-bg text-rose text-xs rounded-full px-2.5 py-0.5 border border-rose/30">
-                        {f}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
 
           {/* Mapping table */}
           <div className="bg-card-bg border border-border rounded-xl overflow-hidden mb-4">
@@ -450,14 +788,14 @@ function ImportPageContent() {
                   const mappingEntry = columnMapping.find((m) => m.originalColumn === header);
                   const mappingMeta = previewData.mapping.find((m) => m.originalColumn === header);
                   const mappedField = mappingEntry?.mappedField ?? "ignore";
-                  const isRequiredRow = ["amazon_title", "cost_price", "upc", "ean"].includes(mappedField);
                   const isUnmapped = mappedField === "ignore";
+                  const wasSuggestedRequired = !!mappingMeta && ["amazon_title", "cost_price", "upc", "ean"].includes(mappingMeta.mappedField);
                   const sample = previewData.preview[0]?.[header];
                   const confidence = mappingMeta?.confidence;
                   return (
                     <tr
                       key={header}
-                      className={`border-t border-border ${isUnmapped && isRequiredRow ? "bg-rose-bg/20" : ""}`}
+                      className={`border-t border-border ${isUnmapped && wasSuggestedRequired ? "bg-rose-bg/20" : ""}`}
                     >
                       <td className="text-body text-sm font-medium px-4 py-2.5">{header}</td>
                       <td className="text-muted text-xs font-mono px-4 py-2.5">
