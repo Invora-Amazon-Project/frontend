@@ -12,7 +12,6 @@ import {
 } from "@/lib/newsletterService";
 import {
   getAdminUsers,
-  getUserSubscription,
   type MembershipRole,
 } from "@/lib/services/adminUsersService";
 
@@ -76,22 +75,20 @@ export default function UsersPage() {
       limit: PAGE_SIZE,
       ...(roleFilter ? { role: roleFilter } : {}),
     })
-      .then(async ({ data: list, total: serverTotal }) => {
+      .then(({ data: list, total: serverTotal }) => {
         setTotal(serverTotal);
-        const rows = await Promise.all(
-          list.map(async (u): Promise<UserRow> => {
-            const subscription = await getUserSubscription(u.id).catch(() => null);
-            return {
-              id: u.id,
-              name: u.name ?? u.email,
-              email: u.email,
-              joinedDate: u.created_at,
-              planName: subscription?.plan?.name,
-              planPrice: subscription?.plan?.price,
-              subscriptionStatus: subscription?.status,
-            };
-          })
-        );
+        const rows: UserRow[] = list.map((u) => {
+          const subscription = u.subscriptions?.[0];
+          return {
+            id: u.id,
+            name: u.name ?? u.email,
+            email: u.email,
+            joinedDate: u.created_at,
+            planName: subscription?.plan?.name,
+            planPrice: subscription?.plan?.price,
+            subscriptionStatus: subscription?.status,
+          };
+        });
         setUsers(rows);
       })
       .catch(() => setUsersError(true))

@@ -81,3 +81,36 @@ export interface LogoutPayload {
 export async function logoutService(payload: LogoutPayload): Promise<void> {
   await axiosInstance.post("/auth/logout", payload);
 }
+
+export interface CurrentUser {
+  id: string;
+  email: string;
+  first_name: string | null;
+  last_name: string | null;
+  phone_number: string | null;
+  default_marketplace: string | null;
+  default_currency: string | null;
+  status: string;
+  is_verified: boolean;
+  created_at: string;
+}
+
+export async function getMeService(): Promise<CurrentUser> {
+  const res = await axiosInstance.get<CurrentUser>("/auth/me");
+  return res.data;
+}
+
+export interface UpdateProfilePayload {
+  first_name?: string;
+  last_name?: string;
+  phone_number?: string;
+  default_marketplace?: string;
+  default_currency?: string;
+}
+
+export async function updateProfileService(
+  payload: UpdateProfilePayload
+): Promise<CurrentUser> {
+  const res = await axiosInstance.patch<CurrentUser>("/auth/profile", payload);
+  return res.data;
+}

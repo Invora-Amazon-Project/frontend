@@ -1,12 +1,13 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
+import { getMeService, updateProfileService } from "@/lib/authService";
 
-// TODO: Replace with real API calls — GET /user/profile, GET /user/billing, GET /user/amazon-connection, GET /user/notification-preferences, GET /user/plan
+// TODO: Replace with real API calls — GET /user/billing, GET /user/amazon-connection, GET /user/notification-preferences, GET /user/plan
 
 type TabKey = "profile" | "company" | "amazon" | "notifications" | "plan";
 
@@ -73,12 +74,39 @@ function SettingsPageContent() {
   const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
 
   // Profile state
-  const [firstName, setFirstName]         = useState("Halenur");
-  const [lastName, setLastName]           = useState("Gürel");
-  const [phone, setPhone]                 = useState("+90 555 123 45 67");
+  const [firstName, setFirstName]         = useState("");
+  const [lastName, setLastName]           = useState("");
+  const [email, setEmail]                 = useState("");
+  const [phone, setPhone]                 = useState("");
   const [marketplace, setMarketplace]     = useState("amazon.com");
   const [currency, setCurrency]           = useState("USD");
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileError, setProfileError]   = useState<string | null>(null);
+  const [profileSaving, setProfileSaving] = useState(false);
   const [profileSaved, setProfileSaved]   = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const me = await getMeService();
+        if (cancelled) return;
+        setFirstName(me.first_name ?? "");
+        setLastName(me.last_name ?? "");
+        setEmail(me.email);
+        setPhone(me.phone_number ?? "");
+        setMarketplace(me.default_marketplace ?? "amazon.com");
+        setCurrency(me.default_currency ?? "USD");
+      } catch {
+        if (!cancelled) setProfileError("Profil bilgileri yüklenemedi.");
+      } finally {
+        if (!cancelled) setProfileLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Company state
   const [companyName, setCompanyName]     = useState("Gürel Trading Ltd.");
@@ -108,9 +136,24 @@ function SettingsPageContent() {
     setNotifPrefs((prev) => ({ ...prev, [key]: val }));
   };
 
-  const handleSaveProfile = () => {
-    setProfileSaved(true);
-    setTimeout(() => setProfileSaved(false), 2500);
+  const handleSaveProfile = async () => {
+    setProfileSaving(true);
+    setProfileError(null);
+    try {
+      await updateProfileService({
+        first_name: firstName,
+        last_name: lastName,
+        phone_number: phone,
+        default_marketplace: marketplace,
+        default_currency: currency,
+      });
+      setProfileSaved(true);
+      setTimeout(() => setProfileSaved(false), 2500);
+    } catch {
+      setProfileError("Profil kaydedilemedi.");
+    } finally {
+      setProfileSaving(false);
+    }
   };
 
   const handleSaveBilling = () => {
@@ -186,7 +229,7 @@ function SettingsPageContent() {
                   <div className="relative">
                     <input
                       readOnly
-                      value="halenur.gurel@hotmail.com"
+                      value={email}
                       className="w-full px-4 py-2.5 text-sm text-muted bg-section-bg border border-border rounded-lg outline-none cursor-not-allowed pr-10"
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted">
@@ -236,11 +279,19 @@ function SettingsPageContent() {
               </div>
 
               <div className="flex items-center gap-3">
-                <Button variant="primary" size="md" onClick={handleSaveProfile}>
-                  Save Profile
+                <Button
+                  variant="primary"
+                  size="md"
+                  onClick={handleSaveProfile}
+                  disabled={profileLoading || profileSaving}
+                >
+                  {profileSaving ? "Saving..." : "Save Profile"}
                 </Button>
                 {profileSaved && (
                   <span className="text-mint text-sm font-medium">Changes saved.</span>
+                )}
+                {profileError && (
+                  <span className="text-rose text-sm font-medium">{profileError}</span>
                 )}
               </div>
             </div>
