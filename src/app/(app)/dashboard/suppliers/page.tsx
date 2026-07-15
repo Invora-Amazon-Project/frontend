@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import type { Supplier } from "@/types";
@@ -113,6 +114,7 @@ const EMPTY_FORM: SupplierFormState = {
 };
 
 function SupplierCard({ supplier }: { supplier: Supplier }) {
+  const router = useRouter();
   const [expanded, setExpanded] = useState(false);
   const flag = COUNTRY_FLAGS[supplier.country] ?? "🌍";
   const lastAgo = supplier.lastUploadedDate ? daysAgo(supplier.lastUploadedDate) : null;
@@ -129,7 +131,9 @@ function SupplierCard({ supplier }: { supplier: Supplier }) {
           </span>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <Button variant="outline" size="sm">View Imports</Button>
+          <Button variant="outline" size="sm" onClick={() => router.push(`/dashboard/suppliers/${supplier.id}`)}>
+            View Imports
+          </Button>
           <Button variant="primary" size="sm">Add List</Button>
         </div>
       </div>
