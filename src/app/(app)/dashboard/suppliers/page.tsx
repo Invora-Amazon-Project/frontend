@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import type { Supplier } from "@/types";
@@ -114,7 +114,6 @@ const EMPTY_FORM: SupplierFormState = {
 };
 
 function SupplierCard({ supplier }: { supplier: Supplier }) {
-  const router = useRouter();
   const [expanded, setExpanded] = useState(false);
   const flag = COUNTRY_FLAGS[supplier.country] ?? "🌍";
   const lastAgo = supplier.lastUploadedDate ? daysAgo(supplier.lastUploadedDate) : null;
@@ -131,10 +130,12 @@ function SupplierCard({ supplier }: { supplier: Supplier }) {
           </span>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <Button variant="outline" size="sm" onClick={() => router.push(`/dashboard/suppliers/${supplier.id}`)}>
-            View Imports
-          </Button>
-          <Button variant="primary" size="sm">Add List</Button>
+          <Link href={`/dashboard/suppliers/${supplier.id}`}>
+            <Button variant="outline" size="sm">View Imports</Button>
+          </Link>
+          <Link href={`/dashboard/import?supplierId=${supplier.id}&supplierName=${encodeURIComponent(supplier.name)}`}>
+            <Button variant="primary" size="sm">Add List</Button>
+          </Link>
         </div>
       </div>
 
@@ -265,12 +266,12 @@ function SupplierCard({ supplier }: { supplier: Supplier }) {
             </span>
           )}
         </div>
-        <a
-          href="/dashboard/import"
-          className="text-primary text-xs font-medium hover:underline shrink-0"
+        <Link
+          href={`/dashboard/import?supplierId=${supplier.id}&supplierName=${encodeURIComponent(supplier.name)}`}
+          className="text-primary text-xs hover:underline cursor-pointer shrink-0"
         >
           Import new list →
-        </a>
+        </Link>
       </div>
     </div>
   );
