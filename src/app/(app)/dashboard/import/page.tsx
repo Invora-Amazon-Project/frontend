@@ -1,28 +1,61 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { Suspense, useState, useRef } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import Button from "@/components/ui/Button";
+// TODO: import { useAppSelector } from "@/lib/hooks"; — read token/workspaceId from Redux auth state
 
-// TODO: Replace with real API calls — POST /import/upload, GET /import/:id/quality
+// TODO: Replace with real API calls — POST /api/supplier-lists/preview, POST /api/supplier-lists/import
 
 type Step = 1 | 2 | 3;
 
-const MOCK_QUALITY = {
-  totalProducts: 247,
-  successfullyRead: 241,
-  errorRows: 6,
-  duplicates: 3,
-  matchedByUpc: 156,
-  matchedByBrandName: 37,
-  unmatched: 48,
-  missingUpc: 12,
-  missingBrand: 3,
-};
+type MappedField =
+  | "amazon_title"
+  | "cost_price"
+  | "upc"
+  | "ean"
+  | "stock"
+  | "brand"
+  | "sku"
+  | "currency"
+  | "moq"
+  | "ignore";
+
+type ColumnMapping = { originalColumn: string; mappedField: MappedField };
+
+const MAPPED_FIELD_OPTIONS: { value: MappedField; label: string }[] = [
+  { value: "ignore", label: "— Ignore this column —" },
+  { value: "amazon_title", label: "Product Title (amazon_title)" },
+  { value: "cost_price", label: "Cost Price (cost_price)" },
+  { value: "upc", label: "UPC Barcode (upc)" },
+  { value: "ean", label: "EAN Barcode (ean)" },
+  { value: "stock", label: "Stock Quantity (stock)" },
+  { value: "brand", label: "Brand (brand)" },
+  { value: "sku", label: "SKU (sku)" },
+  { value: "currency", label: "Currency (currency)" },
+  { value: "moq", label: "MOQ (moq)" },
+];
+
+const REQUIRED_FIELDS: MappedField[] = ["amazon_title", "cost_price"];
+
+// TODO: Replace with real API call — GET /api/suppliers
+const MOCK_SUPPLIERS = [
+  { id: "sup_aquapure", name: "AquaPure" },
+  { id: "sup_soundwave", name: "SoundWave" },
+  { id: "sup_ecokitch", name: "EcoKitch" },
+];
+
+function getMissingRequiredFields(mapping: ColumnMapping[]) {
+  const mappedFields = new Set(mapping.map((m) => m.mappedField));
+  const missingRequired = REQUIRED_FIELDS.filter((f) => !mappedFields.has(f));
+  const missingOneOf = mappedFields.has("upc") || mappedFields.has("ean") ? [] : ["upc/ean"];
+  return { missingRequired, missingOneOf, isValid: missingRequired.length === 0 && missingOneOf.length === 0 };
+}
 
 /* ─── Step Indicator ─── */
 function StepIndicator({ current }: { current: Step }) {
-  const steps = ["Upload File", "Review Quality", "Start Analysis"];
+  const steps = ["Upload File", "Map Columns", "Import Complete"];
   return (
     <div className="flex items-center gap-0 mb-8">
       {steps.map((label, i) => {
@@ -67,77 +100,16 @@ function StepIndicator({ current }: { current: Step }) {
   );
 }
 
-/* ─── Donut ring ─── */
-function MatchDonut({ matched, total }: { matched: number; total: number }) {
-  const pct = Math.round((matched / total) * 100);
-  const R = 36;
-  const CIRC = 2 * Math.PI * R;
-  const fill = CIRC * (pct / 100);
-  return (
-    <div className="flex items-center gap-4">
-      <div className="relative w-20 h-20 shrink-0">
-        <svg width="80" height="80" viewBox="0 0 80 80">
-          <circle cx="40" cy="40" r={R} fill="none" stroke="currentColor" strokeWidth="8" className="text-section-bg" />
-          <circle
-            cx="40" cy="40" r={R}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="8"
-            strokeDasharray={`${fill} ${CIRC}`}
-            strokeDashoffset={CIRC / 4}
-            strokeLinecap="round"
-            className="text-primary"
-          />
-        </svg>
-        <span className="absolute inset-0 flex items-center justify-center text-heading font-bold text-sm">
-          {pct}%
-        </span>
-      </div>
-      <div className="space-y-1 text-sm">
-        <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-primary shrink-0" />
-          <span className="text-body">UPC / EAN: <span className="font-medium">{MOCK_QUALITY.matchedByUpc}</span></span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-primary-light shrink-0" />
-          <span className="text-body">Brand + Name: <span className="font-medium">{MOCK_QUALITY.matchedByBrandName}</span></span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-section-bg border border-border shrink-0" />
-          <span className="text-muted">Unmatched: <span className="font-medium">{MOCK_QUALITY.unmatched}</span></span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ─── Quality check row ─── */
-function QualityRow({ ok, label, detail }: { ok: boolean; label: string; detail: string }) {
-  return (
-    <div className="flex items-start gap-3 py-3 border-b border-border last:border-0">
-      <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${ok ? "bg-mint-bg text-mint" : "bg-peach-bg text-peach"}`}>
-        {ok ? (
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="20 6 9 17 4 12" />
-          </svg>
-        ) : (
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-            <line x1="12" y1="9" x2="12" y2="13" />
-            <line x1="12" y1="17" x2="12.01" y2="17" />
-          </svg>
-        )}
-      </div>
-      <div>
-        <p className="text-body text-sm font-medium">{label}</p>
-        <p className="text-muted text-xs mt-0.5">{detail}</p>
-      </div>
-    </div>
-  );
-}
-
 /* ─── Main Page ─── */
 export default function ImportPage() {
+  return (
+    <Suspense fallback={null}>
+      <ImportPageContent />
+    </Suspense>
+  );
+}
+
+function ImportPageContent() {
   const [step, setStep] = useState<Step>(1);
   const [supplierName, setSupplierName] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -145,24 +117,135 @@ export default function ImportPage() {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const searchParams = useSearchParams();
+  const preselectedSupplierId = searchParams.get("supplierId");
+  const preselectedSupplierName = searchParams.get("supplierName");
+
+  // ── Column Mapping step state ──
+  const [file, setFile] = useState<File | null>(null);
+  const [supplierId, setSupplierId] = useState(preselectedSupplierId || "");
+  const [previewData, setPreviewData] = useState<{
+    totalRows: number;
+    headers: string[];
+    preview: Record<string, string>[];
+    mapping: { originalColumn: string; mappedField: MappedField; confidence?: "high" | "low" }[];
+    validation?: { isValid: boolean; missingRequired: string[]; missingOneOf: string[] };
+  } | null>(null);
+  const [columnMapping, setColumnMapping] = useState<ColumnMapping[]>([]);
+  const [importResult, setImportResult] = useState<{
+    success: boolean;
+    imported: number;
+    skipped: number;
+    skippedDetails?: { row: number; reason: string; data: Record<string, string> }[];
+  } | null>(null);
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const [isLoadingImport, setIsLoadingImport] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+
   const canContinue = uploadMode === "manual" ? supplierName.trim().length > 0 : (!!selectedFile && supplierName.trim().length > 0);
 
-  const handleFileChange = (file: File) => {
-    setSelectedFile(file);
+  const handleFileChange = async (selected: File) => {
+    setSelectedFile(selected);
     setUploadMode("file");
+    setFile(selected);
+    setValidationError(null);
+    setIsLoadingPreview(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", selected);
+      // TODO: Get token from Redux auth state using useAppSelector from "@/lib/hooks"
+      const token = "";
+      const response = await fetch("/api/supplier-lists/preview", {
+        method: "POST",
+        body: formData,
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("Failed to analyze file");
+      const data = await response.json();
+      setPreviewData(data);
+      setColumnMapping(
+        data.mapping.map((m: { originalColumn: string; mappedField: MappedField }) => ({
+          originalColumn: m.originalColumn,
+          mappedField: m.mappedField,
+        }))
+      );
+      setStep(2);
+    } catch {
+      setValidationError("We couldn't analyze this file. Please check the format and try again.");
+    } finally {
+      setIsLoadingPreview(false);
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    const file = e.dataTransfer.files[0];
-    if (file) handleFileChange(file);
+    const dropped = e.dataTransfer.files[0];
+    if (dropped) handleFileChange(dropped);
   };
 
   const formatBytes = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  const updateMapping = (originalColumn: string, mappedField: MappedField) => {
+    setColumnMapping((prev) =>
+      prev.map((m) => (m.originalColumn === originalColumn ? { ...m, mappedField } : m))
+    );
+  };
+
+  const { missingRequired, missingOneOf, isValid: mappingIsValid } = getMissingRequiredFields(columnMapping);
+
+  const handleConfirmImport = async () => {
+    if (!file) return;
+    setIsLoadingImport(true);
+    setImportError(null);
+    try {
+      const mappingToSend = columnMapping
+        .filter((m) => m.mappedField !== "ignore")
+        .map((m) => ({ originalColumn: m.originalColumn, mappedField: m.mappedField }));
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("supplierId", supplierId);
+      // TODO: Get workspaceId from Redux auth state or GET /api/workspaces
+      formData.append("workspaceId", "");
+      formData.append("mapping", JSON.stringify(mappingToSend));
+
+      // TODO: Get token from Redux auth state using useAppSelector from "@/lib/hooks"
+      const token = "";
+      const response = await fetch("/api/supplier-lists/import", {
+        method: "POST",
+        body: formData,
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error("Import failed");
+      const data = await response.json();
+      setImportResult(data);
+      setStep(3);
+    } catch {
+      setImportError("Something went wrong while importing your list. Please try again.");
+    } finally {
+      setIsLoadingImport(false);
+    }
+  };
+
+  const resetAll = () => {
+    setStep(1);
+    setSelectedFile(null);
+    setSupplierName("");
+    setUploadMode(null);
+    setFile(null);
+    setSupplierId("");
+    setPreviewData(null);
+    setColumnMapping([]);
+    setImportResult(null);
+    setValidationError(null);
+    setImportError(null);
   };
 
   return (
@@ -174,6 +257,32 @@ export default function ImportPage() {
         <div className="bg-card-bg border border-border rounded-xl p-6">
           <h2 className="text-heading font-semibold text-lg mb-1">Upload your supplier list</h2>
           <p className="text-muted text-sm mb-6">Import a CSV or Excel file from your supplier to start analysis.</p>
+
+          {/* Supplier select */}
+          <div className="mb-6">
+            <label htmlFor="supplierId" className="block text-xs font-medium text-body mb-1.5">
+              Supplier
+            </label>
+            {/* TODO: Replace mock options with real API call — GET /api/suppliers */}
+            <select
+              id="supplierId"
+              value={supplierId}
+              onChange={(e) => setSupplierId(e.target.value)}
+              className="border border-border rounded-lg px-3 py-2 text-sm bg-card-bg w-full"
+            >
+              {!preselectedSupplierId && <option value="">Select a supplier</option>}
+              {preselectedSupplierId && !MOCK_SUPPLIERS.some((s) => s.id === preselectedSupplierId) && (
+                <option value={preselectedSupplierId}>
+                  {preselectedSupplierName || preselectedSupplierId}
+                </option>
+              )}
+              {MOCK_SUPPLIERS.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <div className="grid grid-cols-2 gap-4 mb-6">
             {/* Option A — File upload */}
@@ -265,99 +374,202 @@ export default function ImportPage() {
             />
           </div>
 
+          {validationError && (
+            <p className="text-rose text-sm mb-4">{validationError}</p>
+          )}
+
           <Button
             variant="primary"
             size="lg"
             className="w-full"
-            disabled={!canContinue}
-            onClick={() => setStep(2)}
+            disabled={!canContinue || isLoadingPreview}
+            onClick={() => { if (uploadMode === "manual") setStep(2); }}
           >
-            Continue →
+            {isLoadingPreview ? (
+              <span className="flex items-center justify-center gap-2">
+                <svg className="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
+                  <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                </svg>
+                Analyzing file...
+              </span>
+            ) : (
+              "Continue →"
+            )}
           </Button>
         </div>
       )}
 
-      {/* ── STEP 2 ── */}
-      {step === 2 && (
+      {/* ── STEP 2 — Map Columns ── */}
+      {step === 2 && previewData && (
         <div className="bg-card-bg border border-border rounded-xl p-6">
-          <h2 className="text-heading font-semibold text-lg mb-1">Review Import Quality</h2>
-          <p className="text-muted text-sm mb-6">Check the results before starting analysis.</p>
-
-          {/* 4 stat cards */}
-          <div className="grid grid-cols-4 gap-3 mb-6">
-            {[
-              { label: "Total Products", value: MOCK_QUALITY.totalProducts, color: "text-heading" },
-              { label: "Successfully Read", value: MOCK_QUALITY.successfullyRead, color: "text-mint" },
-              { label: "Error Rows", value: MOCK_QUALITY.errorRows, color: "text-rose" },
-              { label: "Duplicates", value: MOCK_QUALITY.duplicates, color: "text-peach" },
-            ].map(({ label, value, color }) => (
-              <div key={label} className="bg-section-bg rounded-xl p-4 text-center">
-                <p className={`text-2xl font-bold ${color}`}>{value}</p>
-                <p className="text-muted text-xs mt-1">{label}</p>
-              </div>
-            ))}
+          <div className="flex items-center justify-between mb-1">
+            <h2 className="text-heading font-semibold text-lg">Map Your Columns</h2>
+            <span className="bg-section-bg text-muted text-xs rounded-full px-3 py-1">
+              {previewData.totalRows} rows detected
+            </span>
           </div>
+          <p className="text-muted text-sm mb-6">
+            We&apos;ve auto-detected the column mappings below. Review and correct if needed.
+          </p>
 
-          {/* Quality checks */}
-          <div className="bg-section-bg rounded-xl px-4 mb-5">
-            <QualityRow
-              ok={false}
-              label="Required fields"
-              detail={`UPC/EAN missing for ${MOCK_QUALITY.missingUpc} products, Brand missing for ${MOCK_QUALITY.missingBrand}`}
-            />
-            <div className="py-3 border-b border-border">
-              <div className="flex items-start gap-3">
-                <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5 bg-primary-light text-primary">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <p className="text-body text-sm font-medium mb-2">Match rate</p>
-                  <MatchDonut matched={MOCK_QUALITY.matchedByUpc + MOCK_QUALITY.matchedByBrandName} total={MOCK_QUALITY.successfullyRead} />
+          {previewData.validation && previewData.validation.isValid === false && (
+            <div className="bg-rose-bg border border-rose/30 rounded-xl p-4 mb-4">
+              <div className="flex gap-2 items-start">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-rose shrink-0 mt-0.5">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+                <div>
+                  <p className="text-rose font-medium text-sm mb-2">Some required fields are not mapped:</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[...previewData.validation.missingRequired, ...previewData.validation.missingOneOf].map((f) => (
+                      <span key={f} className="bg-rose-bg text-rose text-xs rounded-full px-2.5 py-0.5 border border-rose/30">
+                        {f}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
-            <QualityRow
-              ok={MOCK_QUALITY.duplicates === 0}
-              label="Duplicate check"
-              detail={`${MOCK_QUALITY.duplicates} duplicate products found and excluded`}
-            />
-            <QualityRow
-              ok={true}
-              label="List freshness"
-              detail="Uploaded today — list is current ✓"
-            />
+          )}
+
+          {/* Mapping table */}
+          <div className="bg-card-bg border border-border rounded-xl overflow-hidden mb-4">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-section-bg">
+                  <th className="text-muted text-xs font-medium px-4 py-2.5">Your Column</th>
+                  <th className="text-muted text-xs font-medium px-4 py-2.5">Sample Data</th>
+                  <th className="text-muted text-xs font-medium px-4 py-2.5">Maps To</th>
+                  <th className="text-muted text-xs font-medium px-4 py-2.5">Confidence</th>
+                </tr>
+              </thead>
+              <tbody>
+                {previewData.headers.map((header) => {
+                  const mappingEntry = columnMapping.find((m) => m.originalColumn === header);
+                  const mappingMeta = previewData.mapping.find((m) => m.originalColumn === header);
+                  const mappedField = mappingEntry?.mappedField ?? "ignore";
+                  const isRequiredRow = ["amazon_title", "cost_price", "upc", "ean"].includes(mappedField);
+                  const isUnmapped = mappedField === "ignore";
+                  const sample = previewData.preview[0]?.[header];
+                  const confidence = mappingMeta?.confidence;
+                  return (
+                    <tr
+                      key={header}
+                      className={`border-t border-border ${isUnmapped && isRequiredRow ? "bg-rose-bg/20" : ""}`}
+                    >
+                      <td className="text-body text-sm font-medium px-4 py-2.5">{header}</td>
+                      <td className="text-muted text-xs font-mono px-4 py-2.5">
+                        {sample ? sample : <span className="text-placeholder">—</span>}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center gap-1">
+                          <select
+                            value={mappedField}
+                            onChange={(e) => updateMapping(header, e.target.value as MappedField)}
+                            className="border border-border rounded-lg px-3 py-2 text-sm bg-page-bg w-full"
+                          >
+                            {MAPPED_FIELD_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                          {["amazon_title", "cost_price", "upc", "ean"].includes(mappedField) && (
+                            <span className="text-rose">*</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {confidence === "high" ? (
+                          <span className="bg-mint-bg text-mint text-xs rounded-full px-2 py-0.5">Auto-detected</span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1">
+                            <span className="bg-peach-bg text-peach text-xs rounded-full px-2 py-0.5">Please verify</span>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-peach">
+                              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                              <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+                            </svg>
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
 
-          {/* Warning */}
-          <div className="bg-peach-bg border border-peach/30 rounded-xl p-4 mb-6">
-            <div className="flex gap-2">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-peach shrink-0 mt-0.5">
-                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-              </svg>
-              <p className="text-peach text-sm">
-                Some products have missing fields. Analysis quality may be lower for these products.
-              </p>
+          {/* Live validation */}
+          {mappingIsValid ? (
+            <div className="bg-mint-bg text-mint rounded-lg p-3 text-sm mb-6">
+              ✓ All required fields are mapped
+            </div>
+          ) : (
+            <div className="bg-rose-bg text-rose rounded-lg p-3 text-sm mb-6">
+              Missing: {[...missingRequired, ...missingOneOf].join(", ")}
+            </div>
+          )}
+
+          {/* Data preview */}
+          <div className="mb-6">
+            <h3 className="text-heading font-semibold text-sm mb-2">Data Preview (first 5 rows)</h3>
+            <div className="bg-card-bg border border-border rounded-xl overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="bg-section-bg">
+                    {previewData.headers.map((header) => (
+                      <th key={header} className="text-muted text-xs font-medium px-4 py-2.5 whitespace-nowrap">
+                        {header}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {previewData.preview.slice(0, 5).map((row, i) => (
+                    <tr key={i} className="border-t border-border">
+                      {previewData.headers.map((header) => (
+                        <td key={header} className="text-body text-xs px-4 py-2 truncate max-w-40">
+                          {row[header] ?? ""}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
+
+          {importError && <p className="text-rose text-sm mb-4">{importError}</p>}
 
           {/* Actions */}
           <div className="flex items-center gap-3">
-            <Button variant="outline" size="lg" onClick={() => setStep(1)}>← Back</Button>
-            <Button variant="primary" size="lg" className="flex-1" onClick={() => setStep(3)}>
-              Start Analysis →
+            <Button variant="outline" size="md" onClick={() => setStep(1)}>← Back</Button>
+            <Button
+              variant="primary"
+              size="md"
+              className={`flex-1 ${!mappingIsValid || isLoadingImport ? "opacity-50 cursor-not-allowed pointer-events-none" : ""}`}
+              onClick={handleConfirmImport}
+            >
+              {isLoadingImport ? (
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" opacity="0.25" />
+                    <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                  </svg>
+                  Importing...
+                </span>
+              ) : (
+                "Confirm & Import"
+              )}
             </Button>
           </div>
-          <p className="text-muted text-xs text-center mt-2">
-            This will use approximately <span className="font-medium text-body">{MOCK_QUALITY.successfullyRead} credits</span>
-          </p>
         </div>
       )}
 
-      {/* ── STEP 3 ── */}
-      {step === 3 && (
+      {/* ── STEP 3 — Import Complete ── */}
+      {step === 3 && importResult && importResult.success && (
         <div className="bg-card-bg border border-border rounded-xl p-8 text-center">
           <div className="w-16 h-16 rounded-full bg-mint-bg flex items-center justify-center mx-auto mb-4">
             <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="text-mint">
@@ -365,24 +577,59 @@ export default function ImportPage() {
             </svg>
           </div>
 
-          <h2 className="text-heading font-semibold text-2xl mb-2">Analysis started!</h2>
-          <p className="text-muted text-sm max-w-sm mx-auto">
-            We&apos;re matching <span className="font-medium text-body">{MOCK_QUALITY.successfullyRead} products</span> with Amazon data. This usually takes 2–5 minutes.
-          </p>
+          <h2 className="text-heading font-bold text-2xl mb-6">Import Complete!</h2>
 
-          {/* Indeterminate progress bar */}
-          <div className="relative bg-section-bg h-2 rounded-full overflow-hidden my-6 max-w-sm mx-auto">
-            <div className="absolute inset-y-0 left-0 w-1/2 bg-primary rounded-full animate-pulse" />
+          <div className="grid grid-cols-2 gap-3 mb-6 max-w-sm mx-auto">
+            <div className="bg-mint-bg rounded-xl p-4">
+              <p className="text-mint font-bold text-2xl">{importResult.imported}</p>
+              <p className="text-mint text-xs mt-1">Successfully added</p>
+            </div>
+            <div className={`rounded-xl p-4 ${importResult.skipped === 0 ? "bg-mint-bg" : "bg-peach-bg"}`}>
+              <p className={`font-bold text-2xl ${importResult.skipped === 0 ? "text-mint" : "text-peach"}`}>
+                {importResult.skipped}
+              </p>
+              <p className={`text-xs mt-1 ${importResult.skipped === 0 ? "text-mint" : "text-peach"}`}>
+                Could not be imported
+              </p>
+            </div>
           </div>
 
-          <p className="text-muted text-xs mb-8">You&apos;ll be notified when analysis is complete.</p>
+          {importResult.skipped > 0 && importResult.skippedDetails && (
+            <div className="text-left mb-6">
+              <h3 className="font-semibold text-sm text-rose mb-2">Skipped Rows</h3>
+              <div className="bg-card-bg border border-rose/20 rounded-xl overflow-hidden overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="bg-section-bg">
+                      <th className="text-muted text-xs font-medium px-4 py-2.5">Row #</th>
+                      <th className="text-muted text-xs font-medium px-4 py-2.5">Reason</th>
+                      <th className="text-muted text-xs font-medium px-4 py-2.5">Data</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {importResult.skippedDetails.map((item, i) => (
+                      <tr key={i} className="border-t border-border">
+                        <td className="text-muted text-xs font-mono px-4 py-2.5 whitespace-nowrap">Row {item.row}</td>
+                        <td className="text-rose text-sm px-4 py-2.5">{item.reason}</td>
+                        <td className="text-muted text-xs font-mono px-4 py-2.5">
+                          {Object.entries(item.data)
+                            .map(([k, v]) => `${k}: ${v || "empty"}`)
+                            .join(", ")}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           <div className="flex flex-col items-center gap-3">
             <Link href="/dashboard/analysis">
               <Button variant="primary" size="lg">Go to Analysis →</Button>
             </Link>
-            <Button variant="outline" size="lg" onClick={() => { setStep(1); setSelectedFile(null); setSupplierName(""); setUploadMode(null); }}>
-              Import another list
+            <Button variant="outline" size="md" onClick={resetAll}>
+              Import Another List
             </Button>
           </div>
         </div>
