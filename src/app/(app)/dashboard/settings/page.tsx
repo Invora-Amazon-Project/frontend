@@ -1,12 +1,22 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
+import { getMeService, updateProfileService } from "@/lib/authService";
+import { getUserSubscription, type UserSubscription } from "@/lib/services/userSubscriptionsService";
+import {
+  deleteSellerAccount,
+  getSellerAccounts,
+  updateSellerAccount,
+  type SellerAccountRecord,
+} from "@/lib/services/sellerAccountsService";
+import { useAppDispatch, useAppSelector } from "@/lib/hooks";
+import { renameCurrentWorkspace } from "@/lib/workspaceSlice";
 
-// TODO: Replace with real API calls — GET /user/profile, GET /user/billing, GET /user/amazon-connection, GET /user/notification-preferences, GET /user/plan
+// TODO: Replace with real API calls — GET /user/billing, GET /user/notification-preferences, GET /user/plan
 
 type TabKey = "profile" | "company" | "amazon" | "notifications" | "plan";
 
@@ -73,12 +83,84 @@ function SettingsPageContent() {
   const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
 
   // Profile state
-  const [firstName, setFirstName]         = useState("Halenur");
-  const [lastName, setLastName]           = useState("Gürel");
-  const [phone, setPhone]                 = useState("+90 555 123 45 67");
+  const [firstName, setFirstName]         = useState("");
+  const [lastName, setLastName]           = useState("");
+  const [email, setEmail]                 = useState("");
+  const [phone, setPhone]                 = useState("");
   const [marketplace, setMarketplace]     = useState("amazon.com");
   const [currency, setCurrency]           = useState("USD");
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileError, setProfileError]   = useState<string | null>(null);
+  const [profileSaving, setProfileSaving] = useState(false);
   const [profileSaved, setProfileSaved]   = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const me = await getMeService();
+        if (cancelled) return;
+        setFirstName(me.first_name ?? "");
+        setLastName(me.last_name ?? "");
+        setEmail(me.email);
+        setPhone(me.phone_number ?? "");
+        setMarketplace(me.default_marketplace ?? "amazon.com");
+        setCurrency(me.default_currency ?? "USD");
+      } catch {
+        if (!cancelled) setProfileError("Profil bilgileri yüklenemedi.");
+      } finally {
+        if (!cancelled) setProfileLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Workspace state
+  const dispatch = useAppDispatch();
+  const {
+    current: workspace,
+    loading: workspaceLoading,
+    renaming: workspaceSaving,
+    renameError: workspaceError,
+  } = useAppSelector((s) => s.workspace);
+  const [workspaceName, setWorkspaceName] = useState("");
+  const [workspaceSaved, setWorkspaceSaved] = useState(false);
+
+  useEffect(() => {
+    if (workspace) setWorkspaceName(workspace.name);
+  }, [workspace]);
+
+  const handleSaveWorkspace = async () => {
+    if (!workspaceName.trim()) return;
+    const result = await dispatch(renameCurrentWorkspace(workspaceName.trim()));
+    if (renameCurrentWorkspace.fulfilled.match(result)) {
+      setWorkspaceSaved(true);
+      setTimeout(() => setWorkspaceSaved(false), 2500);
+    }
+  };
+
+  // Subscription state (Plan & Credits tab)
+  const [subscription, setSubscription] = useState<UserSubscription | null>(null);
+  const [planLoading, setPlanLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    getUserSubscription()
+      .then((sub) => {
+        if (!cancelled) setSubscription(sub);
+      })
+      .catch(() => {
+        if (!cancelled) setSubscription(null);
+      })
+      .finally(() => {
+        if (!cancelled) setPlanLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Company state
   const [companyName, setCompanyName]     = useState("Gürel Trading Ltd.");
@@ -88,8 +170,52 @@ function SettingsPageContent() {
   const [billingSaved, setBillingSaved]   = useState(false);
 
   // Amazon connection state
-  const [amazonConnected] = useState(true);
-  const amazonAccount = { name: "Gürel Trading — Amazon Seller", marketplace: "amazon.com", connectedOn: "March 5, 2026" };
+  const [sellerAccounts, setSellerAccounts] = useState<SellerAccountRecord[]>([]);
+  const [sellerAccountsLoading, setSellerAccountsLoading] = useState(true);
+  const [sellerAccountsError, setSellerAccountsError] = useState("");
+  const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getSellerAccounts()
+      .then((accounts) => {
+        if (!cancelled) setSellerAccounts(accounts);
+      })
+      .catch((err) => {
+        if (!cancelled) setSellerAccountsError(err.response?.data?.message ?? "Failed to load Amazon connections.");
+      })
+      .finally(() => {
+        if (!cancelled) setSellerAccountsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleToggleActive = async (account: SellerAccountRecord) => {
+    setTogglingId(account.id);
+    try {
+      const updated = await updateSellerAccount(account.id, { is_active: !account.is_active });
+      setSellerAccounts((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+    } catch {
+      setSellerAccountsError("Failed to update connection status.");
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
+  const handleDisconnect = async (id: string) => {
+    setDisconnectingId(id);
+    try {
+      await deleteSellerAccount(id);
+      setSellerAccounts((prev) => prev.filter((a) => a.id !== id));
+    } catch {
+      setSellerAccountsError("Failed to disconnect Amazon account.");
+    } finally {
+      setDisconnectingId(null);
+    }
+  };
 
   // Notification preferences state
   const [notifPrefs, setNotifPrefs] = useState({
@@ -108,9 +234,24 @@ function SettingsPageContent() {
     setNotifPrefs((prev) => ({ ...prev, [key]: val }));
   };
 
-  const handleSaveProfile = () => {
-    setProfileSaved(true);
-    setTimeout(() => setProfileSaved(false), 2500);
+  const handleSaveProfile = async () => {
+    setProfileSaving(true);
+    setProfileError(null);
+    try {
+      await updateProfileService({
+        first_name: firstName,
+        last_name: lastName,
+        phone_number: phone,
+        default_marketplace: marketplace,
+        default_currency: currency,
+      });
+      setProfileSaved(true);
+      setTimeout(() => setProfileSaved(false), 2500);
+    } catch {
+      setProfileError("Profil kaydedilemedi.");
+    } finally {
+      setProfileSaving(false);
+    }
   };
 
   const handleSaveBilling = () => {
@@ -124,6 +265,16 @@ function SettingsPageContent() {
   };
 
   const creditsPercent = Math.round((MOCK_PLAN.creditsUsed / MOCK_PLAN.creditsTotal) * 100);
+
+  const planName = subscription?.plan.name ?? MOCK_PLAN.name;
+  const planPrice = subscription ? `$${subscription.plan.price}` : MOCK_PLAN.price;
+  const planRenewalDate = subscription?.renewal_date
+    ? new Date(subscription.renewal_date).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })
+    : MOCK_PLAN.renewalDate;
 
   return (
     <div>
@@ -155,13 +306,50 @@ function SettingsPageContent() {
 
           {/* ── PROFILE ── */}
           {activeTab === "profile" && (
-            <div className="bg-card-bg border border-border rounded-xl p-6">
+            <>
+              <div className="bg-card-bg border border-border rounded-xl p-6">
+                <h2 className="text-heading font-semibold text-base mb-1">Workspace</h2>
+                <p className="text-muted text-sm mb-4">The name of your workspace, visible to invited team members. Use the switcher in the sidebar to create or switch workspaces.</p>
+                <div className="flex items-end gap-3">
+                  <div className="flex-1 max-w-xs">
+                    <Input
+                      label="Workspace Name"
+                      value={workspaceName}
+                      onChange={(e) => setWorkspaceName(e.target.value)}
+                      disabled={workspaceLoading}
+                    />
+                  </div>
+                  <Button
+                    variant="primary"
+                    size="md"
+                    onClick={handleSaveWorkspace}
+                    disabled={workspaceLoading || workspaceSaving || !workspace}
+                  >
+                    {workspaceSaving ? "Saving..." : "Save"}
+                  </Button>
+                  {workspaceSaved && (
+                    <span className="text-mint text-sm font-medium">Saved.</span>
+                  )}
+                  {workspaceError && (
+                    <span className="text-rose text-sm font-medium">{workspaceError}</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-card-bg border border-border rounded-xl p-6">
               <h2 className="text-heading font-semibold text-base mb-5">Profile Information</h2>
 
               {/* Avatar */}
               <div className="flex flex-col items-start gap-2 mb-6">
                 <div className="w-16 h-16 bg-primary-light text-primary text-xl font-bold rounded-full flex items-center justify-center select-none">
-                  {firstName.charAt(0)}{lastName.charAt(0)}
+                  {firstName.trim() || lastName.trim() ? (
+                    `${firstName.trim().charAt(0)}${lastName.trim().charAt(0)}`.toUpperCase()
+                  ) : (
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="8" r="4" />
+                      <path d="M4 20c0-4 3.5-7 8-7s8 3 8 7" />
+                    </svg>
+                  )}
                 </div>
                 <button className="text-xs text-primary hover:underline">
                   Change photo
@@ -186,7 +374,7 @@ function SettingsPageContent() {
                   <div className="relative">
                     <input
                       readOnly
-                      value="halenur.gurel@hotmail.com"
+                      value={email}
                       className="w-full px-4 py-2.5 text-sm text-muted bg-section-bg border border-border rounded-lg outline-none cursor-not-allowed pr-10"
                     />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted">
@@ -236,14 +424,23 @@ function SettingsPageContent() {
               </div>
 
               <div className="flex items-center gap-3">
-                <Button variant="primary" size="md" onClick={handleSaveProfile}>
-                  Save Profile
+                <Button
+                  variant="primary"
+                  size="md"
+                  onClick={handleSaveProfile}
+                  disabled={profileLoading || profileSaving}
+                >
+                  {profileSaving ? "Saving..." : "Save Profile"}
                 </Button>
                 {profileSaved && (
                   <span className="text-mint text-sm font-medium">Changes saved.</span>
                 )}
+                {profileError && (
+                  <span className="text-rose text-sm font-medium">{profileError}</span>
+                )}
               </div>
-            </div>
+              </div>
+            </>
           )}
 
           {/* ── COMPANY & BILLING ── */}
@@ -302,41 +499,54 @@ function SettingsPageContent() {
             <div className="bg-card-bg border border-border rounded-xl p-6">
               <h2 className="text-heading font-semibold text-base mb-5">Amazon Connection</h2>
 
-              {amazonConnected ? (
-                <div>
-                  {/* Connected status */}
-                  <div className="flex items-start justify-between p-4 bg-mint-bg border border-mint/30 rounded-xl mb-5">
-                    <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 bg-card-bg rounded-lg flex items-center justify-center shrink-0">
-                        {/* Amazon "a" logo placeholder */}
-                        <span className="text-peach font-black text-base leading-none">a</span>
-                      </div>
-                      <div>
-                        <p className="text-heading text-sm font-medium">{amazonAccount.name}</p>
-                        <p className="text-muted text-xs mt-0.5">{amazonAccount.marketplace}</p>
-                      </div>
-                    </div>
-                    <span className="flex items-center gap-1.5 bg-mint-bg text-mint text-xs font-semibold">
-                      <span className="w-2 h-2 bg-mint rounded-full inline-block" />
-                      Connected
-                    </span>
-                  </div>
+              {sellerAccountsError && (
+                <p className="text-rose text-sm bg-rose-bg px-3 py-2 rounded-lg mb-4">{sellerAccountsError}</p>
+              )}
 
-                  <div className="flex items-center gap-4 mb-6">
-                    <div className="flex flex-col">
-                      <p className="text-xs text-muted">Connected on</p>
-                      <p className="text-body text-sm font-medium">{amazonAccount.connectedOn}</p>
+              {sellerAccountsLoading ? (
+                <p className="text-muted text-sm py-4">Loading Amazon connections…</p>
+              ) : sellerAccounts.length > 0 ? (
+                <div className="space-y-3 mb-5">
+                  {sellerAccounts.map((account) => (
+                    <div key={account.id} className="flex items-start justify-between p-4 bg-section-bg border border-border rounded-xl">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 bg-card-bg rounded-lg flex items-center justify-center shrink-0">
+                          <span className="text-peach font-black text-base leading-none">a</span>
+                        </div>
+                        <div>
+                          <p className="text-heading text-sm font-medium">{account.marketplace_id}</p>
+                          <p className="text-muted text-xs mt-0.5">Seller ID: {account.seller_id}</p>
+                          <p className="text-muted text-xs mt-0.5">
+                            Connected on{" "}
+                            {new Date(account.created_at).toLocaleDateString("en-US", {
+                              year: "numeric",
+                              month: "long",
+                              day: "numeric",
+                            })}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleToggleActive(account)}
+                          disabled={togglingId === account.id}
+                          className={`flex items-center gap-1.5 text-xs font-semibold rounded-full px-2.5 py-1 transition-colors ${
+                            account.is_active ? "bg-mint-bg text-mint" : "bg-rose-bg text-rose"
+                          }`}
+                        >
+                          <span className={`w-2 h-2 rounded-full inline-block ${account.is_active ? "bg-mint" : "bg-rose"}`} />
+                          {account.is_active ? "Active" : "Inactive"}
+                        </button>
+                        <button
+                          onClick={() => handleDisconnect(account.id)}
+                          disabled={disconnectingId === account.id}
+                          className="text-sm font-medium border border-border rounded-lg px-3 py-1.5 text-rose hover:bg-rose-bg transition-colors"
+                        >
+                          {disconnectingId === account.id ? "Disconnecting…" : "Disconnect"}
+                        </button>
+                      </div>
                     </div>
-                    <div className="w-px h-8 bg-border" />
-                    <div className="flex flex-col">
-                      <p className="text-xs text-muted">Marketplace</p>
-                      <p className="text-body text-sm font-medium">{amazonAccount.marketplace}</p>
-                    </div>
-                  </div>
-
-                  <button className="text-sm font-medium border border-border rounded-lg px-4 py-2 text-rose hover:bg-rose-bg transition-colors">
-                    Disconnect Amazon Account
-                  </button>
+                  ))}
                 </div>
               ) : (
                 <div className="flex flex-col items-center text-center py-10">
@@ -347,13 +557,13 @@ function SettingsPageContent() {
                   <p className="text-muted text-sm max-w-xs mb-6">
                     Connect your Amazon Seller account to enable inventory sync and listing data.
                   </p>
-                  <Button variant="primary" size="md">
+                  <Button variant="primary" size="md" disabled title="Coming soon — the Amazon OAuth connection flow isn't available yet.">
                     Connect Amazon Account
                   </Button>
+                  <p className="text-muted text-xs mt-3">Coming soon.</p>
                 </div>
               )}
 
-              {/* TODO: Amazon SP-API OAuth flow — backend handles token exchange */}
               <p className="text-muted text-xs mt-5 border-t border-border pt-4">
                 MarginLane uses Amazon SP-API to read inventory and listing data. We never write to your listings without your explicit action.
               </p>
@@ -430,14 +640,16 @@ function SettingsPageContent() {
                 <div className="flex items-center justify-between mb-5">
                   <div className="flex items-center gap-3">
                     <span className="bg-primary-light text-primary text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide">
-                      {MOCK_PLAN.name}
+                      {planLoading ? "..." : planName}
                     </span>
                     <div>
                       <p className="text-heading font-bold text-xl">
-                        {MOCK_PLAN.price}
+                        {planLoading ? "..." : planPrice}
                         <span className="text-muted text-sm font-normal ml-1">/ {MOCK_PLAN.billing}</span>
                       </p>
-                      <p className="text-muted text-xs mt-0.5">Renews on {MOCK_PLAN.renewalDate}</p>
+                      <p className="text-muted text-xs mt-0.5">
+                        {planLoading ? "Loading..." : `Renews on ${planRenewalDate}`}
+                      </p>
                     </div>
                   </div>
                   <Link

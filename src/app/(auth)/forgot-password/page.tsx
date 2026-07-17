@@ -1,31 +1,42 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
+import { useAppDispatch, useAppSelector } from "@/lib/hooks";
+import { forgotPassword, clearForgotPasswordState } from "@/lib/authSlice";
 
 type PageState = "enter_email" | "email_sent";
 
 export default function ForgotPasswordPage() {
+  const dispatch = useAppDispatch();
+  const { forgotPasswordLoading, forgotPasswordError, forgotPasswordSuccess } = useAppSelector(
+    (state) => state.auth
+  );
+
   const [pageState, setPageState] = useState<PageState>("enter_email");
   const [email, setEmail] = useState("");
-  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (forgotPasswordSuccess) {
+      setPageState("email_sent");
+    }
+  }, [forgotPasswordSuccess]);
+
+  useEffect(() => {
+    return () => {
+      dispatch(clearForgotPasswordState());
+    };
+  }, [dispatch]);
 
   const handleSend = async () => {
     if (!email) return;
-    setLoading(true);
-    // TODO: Replace mock delay with real API call to auth service
-    await new Promise((res) => setTimeout(res, 1500));
-    setLoading(false);
-    setPageState("email_sent");
+    dispatch(forgotPassword({ email }));
   };
 
   const handleResend = async () => {
-    setLoading(true);
-    // TODO: Replace mock delay with real API call to auth service
-    await new Promise((res) => setTimeout(res, 1500));
-    setLoading(false);
+    dispatch(forgotPassword({ email }));
   };
 
   return (
@@ -68,14 +79,20 @@ export default function ForgotPasswordPage() {
                   onChange={(e) => setEmail(e.target.value)}
                 />
 
+                {forgotPasswordError && (
+                  <div className="rounded-xl border border-rose-200 bg-rose-bg px-4 py-3 text-sm text-rose-600">
+                    {forgotPasswordError}
+                  </div>
+                )}
+
                 <Button
                   variant="primary"
                   size="lg"
                   className="w-full"
-                  disabled={loading || !email}
+                  disabled={forgotPasswordLoading || !email}
                   onClick={handleSend}
                 >
-                  {loading ? "Sending…" : "Send Reset Link"}
+                  {forgotPasswordLoading ? "Sending…" : "Send Reset Link"}
                 </Button>
               </div>
 
@@ -128,12 +145,18 @@ export default function ForgotPasswordPage() {
                     variant="ghost"
                     size="lg"
                     className="w-full"
-                    disabled={loading}
+                    disabled={forgotPasswordLoading}
                     onClick={handleResend}
                   >
-                    {loading ? "Resending…" : "Resend email"}
+                    {forgotPasswordLoading ? "Resending…" : "Resend email"}
                   </Button>
                 </div>
+
+                {forgotPasswordError && (
+                  <div className="mt-4 rounded-xl border border-rose-200 bg-rose-bg px-4 py-3 text-sm text-rose-600">
+                    {forgotPasswordError}
+                  </div>
+                )}
 
                 <Link href="/login" className="mt-6 text-primary text-sm hover:underline">
                   Back to login

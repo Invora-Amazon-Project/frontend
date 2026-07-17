@@ -28,6 +28,6 @@ export async function getNewsletterSubscribers(): Promise<NewsletterSubscriber[]
   return res.data;
 }
 
-export async function deleteNewsletterSubscriber(id: string): Promise<void> {
-  await axiosInstance.delete(`/newsletter-subscribers/${id}`);
+export async function unsubscribeNewsletterSubscriber(email: string): Promise<void> {
+  await axiosInstance.patch("/newsletter-subscribers/unsubscribe", { email });
 }

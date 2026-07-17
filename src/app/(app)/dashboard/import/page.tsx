@@ -1,12 +1,20 @@
 "use client";
 
-import { Suspense, useState, useRef } from "react";
+import { Suspense, useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import type { AxiosError } from "axios";
 import Button from "@/components/ui/Button";
-// TODO: import { useAppSelector } from "@/lib/hooks"; — read token/workspaceId from Redux auth state
-
-// TODO: Replace with real API calls — POST /api/supplier-lists/preview, POST /api/supplier-lists/import
+import { useAppSelector } from "@/lib/hooks";
+import { getSuppliers, type SupplierRecord } from "@/lib/services/suppliersService";
+import { createProduct, type ProductPayload } from "@/lib/services/productsService";
+import { createSupplierProduct, type SupplierProductPayload } from "@/lib/services/supplierProductsService";
+import {
+  importSupplierList,
+  previewSupplierList,
+  type SupplierListImportResult,
+  type SupplierListPreview,
+} from "@/lib/services/supplierListsService";
 
 type Step = 1 | 2 | 3;
 
@@ -38,13 +46,6 @@ const MAPPED_FIELD_OPTIONS: { value: MappedField; label: string }[] = [
 ];
 
 const REQUIRED_FIELDS: MappedField[] = ["amazon_title", "cost_price"];
-
-// TODO: Replace with real API call — GET /api/suppliers
-const MOCK_SUPPLIERS = [
-  { id: "sup_aquapure", name: "AquaPure" },
-  { id: "sup_soundwave", name: "SoundWave" },
-  { id: "sup_ecokitch", name: "EcoKitch" },
-];
 
 function getMissingRequiredFields(mapping: ColumnMapping[]) {
   const mappedFields = new Set(mapping.map((m) => m.mappedField));
@@ -113,6 +114,7 @@ export default function ImportPage() {
 }
 
 function ImportPageContent() {
+  const workspaceId = useAppSelector((s) => s.workspace.current?.id);
   const [step, setStep] = useState<Step>(1);
   const [supplierName, setSupplierName] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -124,23 +126,21 @@ function ImportPageContent() {
   const preselectedSupplierId = searchParams.get("supplierId");
   const preselectedSupplierName = searchParams.get("supplierName");
 
+  const [suppliers, setSuppliers] = useState<SupplierRecord[]>([]);
+
+  useEffect(() => {
+    if (!workspaceId) return;
+    getSuppliers(workspaceId)
+      .then(setSuppliers)
+      .catch(() => setSuppliers([]));
+  }, [workspaceId]);
+
   // ── Column Mapping step state ──
   const [file, setFile] = useState<File | null>(null);
   const [supplierId, setSupplierId] = useState(preselectedSupplierId || "");
-  const [previewData, setPreviewData] = useState<{
-    totalRows: number;
-    headers: string[];
-    preview: Record<string, string>[];
-    mapping: { originalColumn: string; mappedField: MappedField; confidence?: "high" | "low" }[];
-    validation?: { isValid: boolean; missingRequired: string[]; missingOneOf: string[] };
-  } | null>(null);
+  const [previewData, setPreviewData] = useState<SupplierListPreview | null>(null);
   const [columnMapping, setColumnMapping] = useState<ColumnMapping[]>([]);
-  const [importResult, setImportResult] = useState<{
-    success: boolean;
-    imported: number;
-    skipped: number;
-    skippedDetails?: { row: number; reason: string; data: Record<string, string> }[];
-  } | null>(null);
+  const [importResult, setImportResult] = useState<SupplierListImportResult | null>(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
   const [isLoadingImport, setIsLoadingImport] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -175,22 +175,12 @@ function ImportPageContent() {
     setIsLoadingPreview(true);
 
     try {
-      const formData = new FormData();
-      formData.append("file", selected);
-      // TODO: Get token from Redux auth state using useAppSelector from "@/lib/hooks"
-      const token = "";
-      const response = await fetch("/api/supplier-lists/preview", {
-        method: "POST",
-        body: formData,
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!response.ok) throw new Error("Failed to analyze file");
-      const data = await response.json();
+      const data = await previewSupplierList(selected);
       setPreviewData(data);
       setColumnMapping(
-        data.mapping.map((m: { originalColumn: string; mappedField: MappedField }) => ({
+        data.mapping.map((m) => ({
           originalColumn: m.originalColumn,
-          mappedField: m.mappedField,
+          mappedField: m.mappedField as MappedField,
         }))
       );
       setStep(2);
@@ -223,7 +213,7 @@ function ImportPageContent() {
   const { missingRequired, missingOneOf, isValid: mappingIsValid } = getMissingRequiredFields(columnMapping);
 
   const handleConfirmImport = async () => {
-    if (!file) return;
+    if (!file || !workspaceId || !supplierId) return;
     setIsLoadingImport(true);
     setImportError(null);
     try {
@@ -231,22 +221,12 @@ function ImportPageContent() {
         .filter((m) => m.mappedField !== "ignore")
         .map((m) => ({ originalColumn: m.originalColumn, mappedField: m.mappedField }));
 
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("supplierId", supplierId);
-      // TODO: Get workspaceId from Redux auth state or GET /api/workspaces
-      formData.append("workspaceId", "");
-      formData.append("mapping", JSON.stringify(mappingToSend));
-
-      // TODO: Get token from Redux auth state using useAppSelector from "@/lib/hooks"
-      const token = "";
-      const response = await fetch("/api/supplier-lists/import", {
-        method: "POST",
-        body: formData,
-        headers: { Authorization: `Bearer ${token}` },
+      const data = await importSupplierList({
+        file,
+        workspace_id: workspaceId,
+        supplier_id: supplierId,
+        mapping: mappingToSend,
       });
-      if (!response.ok) throw new Error("Import failed");
-      const data = await response.json();
       setImportResult(data);
       setStep(3);
     } catch {
@@ -306,44 +286,21 @@ function ImportPageContent() {
     setManualError(null);
 
     try {
-      const productPayload: Record<string, string> = {
+      const productPayload: ProductPayload = {
+        asin: manualForm.asin || "PENDING_MATCH",
         amazon_title: manualForm.amazon_title,
         brand: manualForm.brand,
       };
       if (manualForm.upc) productPayload.upc = manualForm.upc;
       if (manualForm.ean) productPayload.ean = manualForm.ean;
-      if (manualForm.asin) productPayload.asin = manualForm.asin;
-      if (manualForm.model_number) productPayload.model_number = manualForm.model_number;
       if (manualForm.category) productPayload.category = manualForm.category;
+      if (manualForm.model_number) productPayload.model_number = manualForm.model_number;
 
-      // NOTE: asin is required by the API schema but manual entry may not have one.
-      // TODO: Confirm with backend how to handle manual products without ASIN —
-      // sending a placeholder until then.
-      if (!productPayload.asin) {
-        productPayload.asin = "PENDING_MATCH";
-      }
-
-      // TODO: Get token from Redux auth state using useAppSelector from "@/lib/hooks"
-      const token = "";
-      const productResponse = await fetch("/api/products", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(productPayload),
-      });
-
-      if (!productResponse.ok) {
-        const err = await productResponse.json();
-        throw new Error(err.message || "Could not create product");
-      }
-
-      const productData = await productResponse.json();
+      const productData = await createProduct(productPayload);
       const productId = productData.id;
 
-      if (productId && supplierId) {
-        const supplierProductPayload: Record<string, string | number> = {
+      if (productId && supplierId && workspaceId) {
+        const supplierProductPayload: SupplierProductPayload = {
           supplier_id: supplierId,
           product_id: productId,
           cost_price: parseFloat(manualForm.cost_price),
@@ -354,19 +311,13 @@ function ImportPageContent() {
         if (manualForm.shipping_cost) {
           supplierProductPayload.shipping_cost = parseFloat(manualForm.shipping_cost);
         }
-        if (manualForm.asin && manualForm.asin !== "PENDING_MATCH") {
-          supplierProductPayload.supplier_sku = manualForm.model_number || "";
+        if (manualForm.model_number) {
+          supplierProductPayload.supplier_sku = manualForm.model_number;
         }
 
-        await fetch("/api/supplier-products", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(supplierProductPayload),
+        await createSupplierProduct(supplierProductPayload, workspaceId).catch(() => {
+          // Note: we proceed even if this fails — product was created
         });
-        // Note: we proceed even if this fails — product was created
       }
 
       if (productId) {
@@ -375,7 +326,8 @@ function ImportPageContent() {
         window.location.href = "/dashboard/analysis";
       }
     } catch (error) {
-      setManualError(error instanceof Error ? error.message : "Something went wrong. Please try again.");
+      const axiosErr = error as AxiosError<{ message?: string }>;
+      setManualError(axiosErr.response?.data?.message ?? "Something went wrong. Please try again.");
     } finally {
       setIsSubmittingManual(false);
     }
@@ -396,7 +348,6 @@ function ImportPageContent() {
             <label htmlFor="supplierId" className="block text-xs font-medium text-body mb-1.5">
               Supplier
             </label>
-            {/* TODO: Replace mock options with real API call — GET /api/suppliers */}
             <select
               id="supplierId"
               value={supplierId}
@@ -404,12 +355,12 @@ function ImportPageContent() {
               className="border border-border rounded-lg px-3 py-2 text-sm bg-card-bg w-full"
             >
               {!preselectedSupplierId && <option value="">Select a supplier</option>}
-              {preselectedSupplierId && !MOCK_SUPPLIERS.some((s) => s.id === preselectedSupplierId) && (
+              {preselectedSupplierId && !suppliers.some((s) => s.id === preselectedSupplierId) && (
                 <option value={preselectedSupplierId}>
                   {preselectedSupplierName || preselectedSupplierId}
                 </option>
               )}
-              {MOCK_SUPPLIERS.map((s) => (
+              {suppliers.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
                 </option>
@@ -906,7 +857,11 @@ function ImportPageContent() {
         </div>
       )}
 
-      {/* ── STEP 3 — Import Complete ── */}
+      {/* ── STEP 3 — Import Submitted ── */}
+      {/* NOTE: Import is processed asynchronously by the backend — the response only
+          contains {success, message, listId, status}, not per-row counts. A full
+          "imported/skipped" report isn't available yet; see supplier detail page
+          for the list's status once processing finishes. */}
       {step === 3 && importResult && importResult.success && (
         <div className="bg-card-bg border border-border rounded-xl p-8 text-center">
           <div className="w-16 h-16 rounded-full bg-mint-bg flex items-center justify-center mx-auto mb-4">
@@ -915,56 +870,25 @@ function ImportPageContent() {
             </svg>
           </div>
 
-          <h2 className="text-heading font-bold text-2xl mb-6">Import Complete!</h2>
+          <h2 className="text-heading font-bold text-2xl mb-2">List Submitted!</h2>
+          <p className="text-muted text-sm mb-6">{importResult.message}</p>
 
-          <div className="grid grid-cols-2 gap-3 mb-6 max-w-sm mx-auto">
-            <div className="bg-mint-bg rounded-xl p-4">
-              <p className="text-mint font-bold text-2xl">{importResult.imported}</p>
-              <p className="text-mint text-xs mt-1">Successfully added</p>
-            </div>
-            <div className={`rounded-xl p-4 ${importResult.skipped === 0 ? "bg-mint-bg" : "bg-peach-bg"}`}>
-              <p className={`font-bold text-2xl ${importResult.skipped === 0 ? "text-mint" : "text-peach"}`}>
-                {importResult.skipped}
-              </p>
-              <p className={`text-xs mt-1 ${importResult.skipped === 0 ? "text-mint" : "text-peach"}`}>
-                Could not be imported
-              </p>
+          <div className="bg-section-bg rounded-xl p-4 mb-6 max-w-sm mx-auto text-left">
+            <div className="flex items-center justify-between">
+              <span className="text-muted text-xs">Status</span>
+              <span className="bg-primary-light text-primary text-xs rounded-full px-2 py-0.5 capitalize">
+                {importResult.status}
+              </span>
             </div>
           </div>
 
-          {importResult.skipped > 0 && importResult.skippedDetails && (
-            <div className="text-left mb-6">
-              <h3 className="font-semibold text-sm text-rose mb-2">Skipped Rows</h3>
-              <div className="bg-card-bg border border-rose/20 rounded-xl overflow-hidden overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="bg-section-bg">
-                      <th className="text-muted text-xs font-medium px-4 py-2.5">Row #</th>
-                      <th className="text-muted text-xs font-medium px-4 py-2.5">Reason</th>
-                      <th className="text-muted text-xs font-medium px-4 py-2.5">Data</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {importResult.skippedDetails.map((item, i) => (
-                      <tr key={i} className="border-t border-border">
-                        <td className="text-muted text-xs font-mono px-4 py-2.5 whitespace-nowrap">Row {item.row}</td>
-                        <td className="text-rose text-sm px-4 py-2.5">{item.reason}</td>
-                        <td className="text-muted text-xs font-mono px-4 py-2.5">
-                          {Object.entries(item.data)
-                            .map(([k, v]) => `${k}: ${v || "empty"}`)
-                            .join(", ")}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+          <p className="text-muted text-xs mb-6">
+            Your list is being processed in the background. Check the supplier&apos;s page for progress.
+          </p>
 
           <div className="flex flex-col items-center gap-3">
-            <Link href="/dashboard/analysis">
-              <Button variant="primary" size="lg">Go to Analysis →</Button>
+            <Link href={supplierId ? `/dashboard/suppliers/${supplierId}` : "/dashboard/suppliers"}>
+              <Button variant="primary" size="lg">Go to Supplier →</Button>
             </Link>
             <Button variant="outline" size="md" onClick={resetAll}>
               Import Another List

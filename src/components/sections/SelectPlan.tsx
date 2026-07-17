@@ -124,11 +124,7 @@ export default function SelectPlan() {
     );
 
     if (userId && backendPlan) {
-      createUserSubscription({
-        user_id: userId,
-        plan_id: backendPlan.id,
-        status: "trialing",
-      }).catch(() => {});
+      createUserSubscription({ plan_id: backendPlan.id }).catch(() => {});
     }
 
     router.push(`/payment/success?plan=${plan.name.toLowerCase()}&billing=${billing}`);

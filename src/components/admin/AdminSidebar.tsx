@@ -146,6 +146,16 @@ const sections = [
           </svg>
         ),
       },
+      {
+        label: "Canonical Products",
+        href: "/admin/canonical-products",
+        icon: (
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="2" y="2" width="14" height="14" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+            <path d="M2 6.5h14M6.5 6.5V16" stroke="currentColor" strokeWidth="1.5" />
+          </svg>
+        ),
+      },
     ],
   },
 ];

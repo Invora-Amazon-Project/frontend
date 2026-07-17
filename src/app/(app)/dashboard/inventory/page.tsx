@@ -1,9 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { AxiosError } from "axios";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import type { InventoryItem } from "@/types";
+import { useAppSelector } from "@/lib/hooks";
+import { getSuppliers, type SupplierRecord } from "@/lib/services/suppliersService";
+import { getSupplierProducts, type SupplierProductRecord } from "@/lib/services/supplierProductsService";
+import { createOrder } from "@/lib/services/ordersService";
+import { createOrderItem } from "@/lib/services/orderItemsService";
 
 // TODO: Replace with real API call — GET /inventory
 
@@ -65,13 +71,6 @@ const MOCK_INVENTORY: InventoryDisplay[] = [
   },
 ];
 
-const SUPPLIERS = [
-  { id: "s1", name: "Shanghai Source Co." },
-  { id: "s2", name: "Royal Trading Ltd." },
-  { id: "s3", name: "Nomader Europe GmbH" },
-  { id: "s4", name: "Brieftons International" },
-];
-
 type TabKey = "all" | "low" | "reorder" | "out";
 type StockStatus = "critical" | "low" | "reorder" | "healthy";
 
@@ -121,6 +120,8 @@ function StockStatusBadge({ status }: { status: StockStatus }) {
 }
 
 export default function InventoryPage() {
+  const workspaceId = useAppSelector((s) => s.workspace.current?.id);
+
   const [items, setItems]             = useState<InventoryDisplay[]>(MOCK_INVENTORY);
   const [activeTab, setActiveTab]     = useState<TabKey>("all");
   const [editingMinId, setEditingMinId] = useState<string | null>(null);
@@ -128,7 +129,21 @@ export default function InventoryPage() {
   const [reorderItem, setReorderItem] = useState<InventoryDisplay | null>(null);
   const [reorderQty, setReorderQty]   = useState("100");
   const [reorderSupplier, setReorderSupplier] = useState("");
+  const [reorderSupplierProductId, setReorderSupplierProductId] = useState("");
+  const [reorderSaving, setReorderSaving] = useState(false);
+  const [reorderError, setReorderError] = useState("");
   const [toast, setToast]             = useState<string | null>(null);
+
+  const [suppliers, setSuppliers] = useState<SupplierRecord[]>([]);
+  const [supplierProducts, setSupplierProducts] = useState<SupplierProductRecord[]>([]);
+
+  useEffect(() => {
+    if (!workspaceId) return;
+    getSuppliers(workspaceId).then(setSuppliers).catch(() => setSuppliers([]));
+    getSupplierProducts(workspaceId).then(setSupplierProducts).catch(() => setSupplierProducts([]));
+  }, [workspaceId]);
+
+  const reorderSupplierProducts = supplierProducts.filter((sp) => sp.supplier_id === reorderSupplier);
 
   const filtered        = filterByTab(items, activeTab);
   const criticalCount   = items.filter((i) => getStockStatus(i) === "critical").length;
@@ -157,13 +172,33 @@ export default function InventoryPage() {
   const openReorder = (item: InventoryDisplay) => {
     setReorderItem(item);
     setReorderQty("100");
-    setReorderSupplier(item.supplierId);
+    setReorderSupplier("");
+    setReorderSupplierProductId("");
+    setReorderError("");
   };
 
-  const createDraftOrder = () => {
-    setReorderItem(null);
-    setToast(`Draft order created for ${reorderItem?.productName ?? "product"}.`);
-    setTimeout(() => setToast(null), 3500);
+  const createDraftOrder = async () => {
+    if (!workspaceId || !reorderItem || !reorderSupplier || !reorderSupplierProductId) return;
+    setReorderSaving(true);
+    setReorderError("");
+    try {
+      const supplierProduct = supplierProducts.find((sp) => sp.id === reorderSupplierProductId);
+      const order = await createOrder({ workspace_id: workspaceId, supplier_id: reorderSupplier, status: "DRAFT" });
+      await createOrderItem({
+        order_id: order.id,
+        supplier_product_id: reorderSupplierProductId,
+        quantity: parseInt(reorderQty, 10) || 1,
+        unit_price: supplierProduct ? Number(supplierProduct.cost_price) : 0,
+      });
+      setToast(`Draft order created for ${reorderItem.productName}.`);
+      setTimeout(() => setToast(null), 3500);
+      setReorderItem(null);
+    } catch (err) {
+      const axiosErr = err as AxiosError<{ message?: string }>;
+      setReorderError(axiosErr.response?.data?.message ?? "Failed to create draft order.");
+    } finally {
+      setReorderSaving(false);
+    }
   };
 
   return (
@@ -343,51 +378,71 @@ export default function InventoryPage() {
                 <label className="text-muted text-xs font-medium block mb-1">Supplier</label>
                 <select
                   value={reorderSupplier}
-                  onChange={(e) => setReorderSupplier(e.target.value)}
+                  onChange={(e) => {
+                    setReorderSupplier(e.target.value);
+                    setReorderSupplierProductId("");
+                  }}
                   className="w-full px-3 py-2 text-sm text-body bg-page-bg border border-border rounded-lg outline-none focus:border-primary"
                 >
-                  {SUPPLIERS.map((s) => (
+                  <option value="">Select a supplier…</option>
+                  {suppliers.map((s) => (
                     <option key={s.id} value={s.id}>{s.name}</option>
                   ))}
                 </select>
               </div>
 
-              {/* Quantity + unit cost row */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-muted text-xs font-medium block mb-1">Quantity</label>
-                  <input
-                    type="number"
-                    value={reorderQty}
-                    onChange={(e) => setReorderQty(e.target.value)}
-                    className="w-full px-3 py-2 text-sm text-body bg-page-bg border border-border rounded-lg outline-none focus:border-primary"
-                    min="1"
-                  />
-                </div>
-                <div>
-                  <label className="text-muted text-xs font-medium block mb-1">Unit Cost (USD)</label>
-                  <input
-                    type="number"
-                    defaultValue={reorderItem.unitCost}
-                    step="0.01"
-                    className="w-full px-3 py-2 text-sm text-body bg-page-bg border border-border rounded-lg outline-none focus:border-primary"
-                    min="0"
-                  />
-                </div>
+              {/* Supplier product dropdown */}
+              <div>
+                <label className="text-muted text-xs font-medium block mb-1">Supplier Product</label>
+                <select
+                  value={reorderSupplierProductId}
+                  onChange={(e) => setReorderSupplierProductId(e.target.value)}
+                  disabled={!reorderSupplier}
+                  className="w-full px-3 py-2 text-sm text-body bg-page-bg border border-border rounded-lg outline-none focus:border-primary disabled:opacity-50"
+                >
+                  <option value="">Select a product…</option>
+                  {reorderSupplierProducts.map((sp) => (
+                    <option key={sp.id} value={sp.id}>
+                      {sp.product?.amazon_title ?? sp.supplier_sku ?? sp.id} — {sp.currency} {sp.cost_price}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Quantity */}
+              <div>
+                <label className="text-muted text-xs font-medium block mb-1">Quantity</label>
+                <input
+                  type="number"
+                  value={reorderQty}
+                  onChange={(e) => setReorderQty(e.target.value)}
+                  className="w-full px-3 py-2 text-sm text-body bg-page-bg border border-border rounded-lg outline-none focus:border-primary"
+                  min="1"
+                />
               </div>
 
               {/* Estimated total */}
               <div className="bg-section-bg rounded-lg px-3 py-2.5 flex items-center justify-between">
                 <span className="text-muted text-xs">Estimated Order Total</span>
                 <span className="text-heading text-sm font-semibold">
-                  ${(parseFloat(reorderQty || "0") * reorderItem.unitCost).toFixed(2)}
+                  ${(
+                    parseFloat(reorderQty || "0") *
+                    Number(supplierProducts.find((sp) => sp.id === reorderSupplierProductId)?.cost_price ?? 0)
+                  ).toFixed(2)}
                 </span>
               </div>
 
+              {reorderError && <p className="text-rose text-xs">{reorderError}</p>}
+
               {/* Actions */}
               <div className="flex gap-2 pt-1">
-                <Button variant="primary" size="md" onClick={createDraftOrder}>
-                  Create Draft Order
+                <Button
+                  variant="primary"
+                  size="md"
+                  onClick={createDraftOrder}
+                  disabled={reorderSaving || !reorderSupplier || !reorderSupplierProductId}
+                >
+                  {reorderSaving ? "Creating…" : "Create Draft Order"}
                 </Button>
                 <Button variant="ghost" size="md" onClick={() => setReorderItem(null)}>
                   Cancel

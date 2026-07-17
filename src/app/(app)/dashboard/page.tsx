@@ -1,9 +1,14 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import Button from "@/components/ui/Button";
 import AlertCard from "@/components/dashboard/AlertCard";
 import type { DailyPulseAlert, ImportSession, InventoryItem } from "@/types";
+import { getUserSubscription, type UserSubscription } from "@/lib/services/userSubscriptionsService";
+import { getOrders, type OrderRecord } from "@/lib/services/ordersService";
+import { getMeService } from "@/lib/authService";
+import { useAppSelector } from "@/lib/hooks";
 
 // TODO: Replace with real API call — GET /dashboard/summary
 
@@ -155,6 +160,37 @@ function ImportStatusBadge({ status }: { status: ImportSession["status"] }) {
 }
 
 export default function DashboardPage() {
+  const workspaceId = useAppSelector((s) => s.workspace.current?.id);
+  const [subscription, setSubscription] = useState<UserSubscription | null>(null);
+  const [orders, setOrders] = useState<OrderRecord[]>([]);
+  const [userName, setUserName] = useState("");
+
+  useEffect(() => {
+    getUserSubscription()
+      .then(setSubscription)
+      .catch(() => setSubscription(null));
+  }, []);
+
+  useEffect(() => {
+    getMeService()
+      .then((user) => {
+        const name = [user.first_name, user.last_name].filter(Boolean).join(" ");
+        setUserName(name);
+      })
+      .catch(() => setUserName(""));
+  }, []);
+
+  useEffect(() => {
+    if (!workspaceId) return;
+    getOrders(workspaceId)
+      .then(setOrders)
+      .catch(() => setOrders([]));
+  }, [workspaceId]);
+
+  const draftCount = orders.filter((o) => o.status === "DRAFT").length;
+  const pendingCount = orders.filter((o) => o.status === "PENDING").length;
+  const completedCount = orders.filter((o) => o.status === "COMPLETED").length;
+
   const handleAlertAction = (action: string, alertId: string) => {
     // TODO: Replace with real API call — POST /alerts/:id/:action
     console.log("alert action:", action, alertId);
@@ -164,7 +200,9 @@ export default function DashboardPage() {
     <div>
       {/* Greeting */}
       <div className="mb-6">
-        <h1 className="text-heading font-semibold text-2xl">Good morning, Sarah 👋</h1>
+        <h1 className="text-heading font-semibold text-2xl">
+          Good morning{userName ? `, ${userName}` : ""} 👋
+        </h1>
         <p className="text-muted text-sm mt-1">Here&apos;s what needs your attention today.</p>
       </div>
 
@@ -302,15 +340,15 @@ export default function DashboardPage() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-muted text-xs">Draft</span>
-                  <span className="bg-peach-bg text-peach text-sm font-bold px-2 py-0.5 rounded-lg">2</span>
+                  <span className="bg-peach-bg text-peach text-sm font-bold px-2 py-0.5 rounded-lg">{draftCount}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-muted text-xs">Awaiting Confirm.</span>
-                  <span className="bg-primary-light text-primary text-sm font-bold px-2 py-0.5 rounded-lg">1</span>
+                  <span className="text-muted text-xs">Pending</span>
+                  <span className="bg-primary-light text-primary text-sm font-bold px-2 py-0.5 rounded-lg">{pendingCount}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-muted text-xs">Shipped</span>
-                  <span className="bg-mint-bg text-mint text-sm font-bold px-2 py-0.5 rounded-lg">4</span>
+                  <span className="text-muted text-xs">Completed</span>
+                  <span className="bg-mint-bg text-mint text-sm font-bold px-2 py-0.5 rounded-lg">{completedCount}</span>
                 </div>
               </div>
 
@@ -325,8 +363,8 @@ export default function DashboardPage() {
             <div className="bg-card-bg border border-border rounded-xl p-5">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-heading font-semibold text-base">Plan</h2>
-                <span className="bg-primary-light text-primary rounded-full px-3 py-1 text-xs font-medium">
-                  Starter Plan
+                <span className="bg-primary-light text-primary rounded-full px-3 py-1 text-xs font-medium capitalize">
+                  {subscription ? `${subscription.plan.name} Plan` : "—"}
                 </span>
               </div>
 

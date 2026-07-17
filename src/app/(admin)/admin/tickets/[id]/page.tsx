@@ -1,15 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Button from "@/components/ui/Button";
 import StatusBadge from "@/components/admin/StatusBadge";
 import { mockTickets } from "../page";
 import type { TicketStatus, TicketPriority } from "@/types";
+import { getAdminUsers, type AdminUserListItem } from "@/lib/services/adminUsersService";
 
 const allStatuses: TicketStatus[] = ["open", "pending", "assigned", "in_progress", "fixed", "closed", "reopened"];
 const allPriorities: TicketPriority[] = ["critical", "high", "medium", "low"];
-const adminNames = ["Unassigned", "Ali Yıldız", "Deniz Kara", "Berk Şahin"];
 
 const departmentLabels: Record<string, string> = {
   technical_support: "Technical Support",
@@ -31,6 +31,13 @@ export default function TicketDetailPage() {
   const [assignedTo, setAssignedTo] = useState(ticket?.assignedTo ?? "Unassigned");
   const [internalNote, setInternalNote] = useState("");
   const [reply, setReply] = useState("");
+  const [admins, setAdmins] = useState<AdminUserListItem[]>([]);
+
+  useEffect(() => {
+    getAdminUsers({ role: "ADMIN" })
+      .then((res) => setAdmins(res.data))
+      .catch(() => setAdmins([]));
+  }, []);
 
   if (!ticket) {
     return (
@@ -158,8 +165,11 @@ export default function TicketDetailPage() {
                   onChange={(e) => setAssignedTo(e.target.value)}
                   className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-page-bg text-body outline-none focus:border-primary transition-colors"
                 >
-                  {adminNames.map((name) => (
-                    <option key={name} value={name}>{name}</option>
+                  <option value="Unassigned">Unassigned</option>
+                  {admins.map((admin) => (
+                    <option key={admin.id} value={admin.name ?? admin.email}>
+                      {admin.name ?? admin.email}
+                    </option>
                   ))}
                 </select>
               </div>

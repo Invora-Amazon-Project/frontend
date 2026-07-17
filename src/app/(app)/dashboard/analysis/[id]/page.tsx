@@ -1,20 +1,41 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import type { AxiosError } from "axios";
 import Button from "@/components/ui/Button";
+import Input from "@/components/ui/Input";
+import Modal from "@/components/ui/Modal";
+import { getProductById, updateProduct, type ProductRecord, type ProductUpdatePayload } from "@/lib/services/productsService";
+import {
+  getAmazonProductMetrics,
+  updateAmazonProductMetric,
+  type AmazonProductMetricRecord,
+  type AmazonProductMetricUpdatePayload,
+} from "@/lib/services/amazonProductMetricsService";
+import {
+  addShortlistItem,
+  createShortlist,
+  getShortlists,
+  type ShortlistRecord,
+} from "@/lib/services/shortlistsService";
+import { getSupplierProducts, type SupplierProductRecord } from "@/lib/services/supplierProductsService";
+import { createOrder } from "@/lib/services/ordersService";
+import { createOrderItem } from "@/lib/services/orderItemsService";
+import { useAppSelector } from "@/lib/hooks";
 
-// TODO: Replace with real API call — GET /products/:id
+// NOTE: Identity fields (title/asin/ean/upc/brand/category) come from
+// GET /products/:id. BSR and Buy Box Price come from the latest
+// GET /amazon-product-metrics/:product_id snapshot (falls back to mock if
+// no snapshot exists yet). Everything else below — score, lowest FBA price,
+// amazon-active flag, seller counts, review count/rating, risks, variations,
+// competitors, reviews and price history — is still mock: it belongs to
+// profit-calculations / MarginScore / AmazonMatch / CanonicalProduct, and
+// review/rating/seller-count fields don't have a documented source in any
+// group reviewed so far (flagged to backend).
 
-const PRODUCT = {
-  supplierTitle: "Oral-B Pro 3 Electric Toothbrush",
-  amazonTitle: "Oral-B Pro 3 3000 CrossAction Electric Toothbrush, White",
-  asin: "B08X123456",
-  ean: "4210201432521",
-  brand: "Oral-B",
-  category: "Health & Personal Care > Oral Care",
-  matchScore: 96,
-  score: 82,
-};
+const MOCK_MATCH_SCORE = 96;
+const MOCK_SCORE = 82;
 
 const SCORE_TREND = [58, 63, 61, 70, 76, 82];
 
@@ -95,17 +116,43 @@ const NOTES = [
   },
 ];
 
-const MONTH_LABELS = ["Jun'23", "Jul'23", "Aug'23", "Sep'23", "Oct'23", "Nov'23", "Dec'23", "Jan'24", "Feb'24", "Mar'24", "Apr'24", "May'24", "Jun'24"];
+interface MetricPoint {
+  date: Date;
+  buybox_price: number;
+  sales_rank: number;
+}
 
-const PRICE_SERIES = {
-  buyBox: [42, 44, 43, 45, 47, 46, 48, 45, 44, 46, 48, 49, 49.9],
-  amazon: [45, 45, 46, 46, 48, 47, 49, 47, 46, 47, 49, 50, 50],
-  fba: [43, 44, 44, 45, 46, 46, 47, 45, 44, 45, 47, 48, 47.5],
-  fbm: [40, 41, 42, 43, 44, 43, 45, 42, 41, 43, 44, 45, 46],
-  rank: [1900, 1800, 2100, 1700, 1500, 1650, 1400, 1600, 1750, 1450, 1300, 1200, 1247],
+function toMetricPoints(records: AmazonProductMetricRecord[]): MetricPoint[] {
+  return records
+    .map((r) => ({ date: new Date(r.updated_at), buybox_price: r.buybox_price, sales_rank: r.sales_rank }))
+    .sort((a, b) => a.date.getTime() - b.date.getTime());
+}
+
+const RANGE_DAYS: Record<(typeof TIME_RANGES)[number], number | null> = {
+  "7 Days": 7,
+  "1 Month": 30,
+  "3 Months": 90,
+  "6 Months": 180,
+  "1 Year": 365,
+  All: null,
 };
 
-const BSR_TREND = [2400, 2200, 2450, 2000, 1850, 1950, 1600, 1750, 1900, 1500, 1350, 1300, 1247];
+function filterPointsByRange(points: MetricPoint[], range: (typeof TIME_RANGES)[number]): MetricPoint[] {
+  const days = RANGE_DAYS[range];
+  if (days === null) return points;
+  const cutoff = Date.now() - days * 86400000;
+  const inRange = points.filter((p) => p.date.getTime() >= cutoff);
+  return inRange.length >= 2 ? inRange : points;
+}
+
+function computeBsrTrend(points: MetricPoint[]): number | null {
+  if (points.length < 2) return null;
+  const cutoff = Date.now() - 30 * 86400000;
+  const past = [...points].reverse().find((p) => p.date.getTime() <= cutoff) ?? points[0];
+  const latest = points[points.length - 1];
+  if (!past || past.sales_rank === 0 || past === latest) return null;
+  return ((past.sales_rank - latest.sales_rank) / past.sales_rank) * 100;
+}
 
 const TABS = [
   "Overview",
@@ -193,6 +240,239 @@ function seriesToPath(values: number[], min: number, max: number, w: number, h: 
 }
 
 export default function ProductDetailPage() {
+  const params = useParams<{ id: string }>();
+  const workspaceId = useAppSelector((s) => s.workspace.current?.id);
+  const [product, setProduct] = useState<ProductRecord | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [latestMetric, setLatestMetric] = useState<AmazonProductMetricRecord | null>(null);
+  const [metricHistory, setMetricHistory] = useState<AmazonProductMetricRecord[]>([]);
+
+  const [isMetricEditOpen, setIsMetricEditOpen] = useState(false);
+  const [metricForm, setMetricForm] = useState<AmazonProductMetricUpdatePayload>({});
+  const [metricSaving, setMetricSaving] = useState(false);
+  const [metricError, setMetricError] = useState("");
+
+  const openMetricEdit = () => {
+    if (!latestMetric) return;
+    setMetricForm({
+      buybox_price: latestMetric.buybox_price ?? undefined,
+      amazon_fee: latestMetric.amazon_fee ?? undefined,
+      fba_fee: latestMetric.fba_fee ?? undefined,
+      sales_rank: latestMetric.sales_rank ?? undefined,
+    });
+    setMetricError("");
+    setIsMetricEditOpen(true);
+  };
+
+  const handleMetricSave = async () => {
+    if (!latestMetric) return;
+    setMetricSaving(true);
+    setMetricError("");
+    try {
+      const updated = await updateAmazonProductMetric(latestMetric.id, metricForm);
+      setLatestMetric(updated);
+      setIsMetricEditOpen(false);
+    } catch (err) {
+      const axiosErr = err as AxiosError<{ message?: string }>;
+      setMetricError(axiosErr.response?.data?.message ?? "Failed to update metrics.");
+    } finally {
+      setMetricSaving(false);
+    }
+  };
+
+  const [isShortlistOpen, setIsShortlistOpen] = useState(false);
+  const [shortlists, setShortlists] = useState<ShortlistRecord[]>([]);
+  const [shortlistsLoading, setShortlistsLoading] = useState(false);
+  const [shortlistError, setShortlistError] = useState("");
+  const [shortlistSuccess, setShortlistSuccess] = useState("");
+  const [addingShortlistId, setAddingShortlistId] = useState<string | null>(null);
+  const [newShortlistName, setNewShortlistName] = useState("");
+  const [creatingShortlist, setCreatingShortlist] = useState(false);
+
+  const openShortlistModal = () => {
+    setShortlistError("");
+    setShortlistSuccess("");
+    setNewShortlistName("");
+    setIsShortlistOpen(true);
+    setShortlistsLoading(true);
+    getShortlists()
+      .then(setShortlists)
+      .catch((err: AxiosError<{ message?: string }>) => {
+        setShortlistError(err.response?.data?.message ?? "Failed to load shortlists.");
+      })
+      .finally(() => setShortlistsLoading(false));
+  };
+
+  const handleAddToShortlist = async (shortlistId: string) => {
+    if (!product) return;
+    setShortlistError("");
+    setShortlistSuccess("");
+    setAddingShortlistId(shortlistId);
+    try {
+      await addShortlistItem(shortlistId, product.id);
+      setShortlistSuccess("Added to shortlist.");
+    } catch (err) {
+      const axiosErr = err as AxiosError<{ message?: string }>;
+      setShortlistError(axiosErr.response?.data?.message ?? "Failed to add product to shortlist.");
+    } finally {
+      setAddingShortlistId(null);
+    }
+  };
+
+  const handleCreateShortlistAndAdd = async () => {
+    if (!newShortlistName.trim() || !product) return;
+    setCreatingShortlist(true);
+    setShortlistError("");
+    setShortlistSuccess("");
+    try {
+      const created = await createShortlist(newShortlistName.trim());
+      setShortlists((prev) => [created, ...prev]);
+      await addShortlistItem(created.id, product.id);
+      setShortlistSuccess("Added to shortlist.");
+      setNewShortlistName("");
+    } catch (err) {
+      const axiosErr = err as AxiosError<{ message?: string }>;
+      setShortlistError(axiosErr.response?.data?.message ?? "Failed to create shortlist.");
+    } finally {
+      setCreatingShortlist(false);
+    }
+  };
+
+  const [isCreatePOOpen, setIsCreatePOOpen] = useState(false);
+  const [poSupplierProducts, setPoSupplierProducts] = useState<SupplierProductRecord[]>([]);
+  const [poSupplierProductId, setPoSupplierProductId] = useState("");
+  const [poQty, setPoQty] = useState("100");
+  const [poLoading, setPoLoading] = useState(false);
+  const [poSaving, setPoSaving] = useState(false);
+  const [poError, setPoError] = useState("");
+  const [poSuccess, setPoSuccess] = useState("");
+
+  const openCreatePO = () => {
+    if (!product || !workspaceId) return;
+    setPoError("");
+    setPoSuccess("");
+    setPoSupplierProductId("");
+    setPoQty("100");
+    setIsCreatePOOpen(true);
+    setPoLoading(true);
+    getSupplierProducts(workspaceId)
+      .then((all) => setPoSupplierProducts(all.filter((sp) => sp.product_id === product.id)))
+      .catch(() => setPoSupplierProducts([]))
+      .finally(() => setPoLoading(false));
+  };
+
+  const handleCreatePO = async () => {
+    if (!workspaceId || !poSupplierProductId) return;
+    const supplierProduct = poSupplierProducts.find((sp) => sp.id === poSupplierProductId);
+    if (!supplierProduct) return;
+    setPoSaving(true);
+    setPoError("");
+    try {
+      const order = await createOrder({ workspace_id: workspaceId, supplier_id: supplierProduct.supplier_id, status: "DRAFT" });
+      await createOrderItem({
+        order_id: order.id,
+        supplier_product_id: poSupplierProductId,
+        quantity: parseInt(poQty, 10) || 1,
+        unit_price: Number(supplierProduct.cost_price),
+      });
+      setPoSuccess("Draft order created.");
+    } catch (err) {
+      const axiosErr = err as AxiosError<{ message?: string }>;
+      setPoError(axiosErr.response?.data?.message ?? "Failed to create order.");
+    } finally {
+      setPoSaving(false);
+    }
+  };
+
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<ProductUpdatePayload>({});
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
+
+  const openEdit = () => {
+    if (!product) return;
+    setEditForm({
+      amazon_title: product.amazon_title ?? "",
+      brand: product.brand ?? "",
+      upc: product.upc ?? "",
+      ean: product.ean ?? "",
+      model_number: product.model_number ?? "",
+      category: product.category ?? "",
+      image_url: product.image_url ?? "",
+    });
+    setEditError("");
+    setIsEditOpen(true);
+  };
+
+  const handleEditSave = async () => {
+    if (!product) return;
+    setEditSaving(true);
+    setEditError("");
+    try {
+      const payload: ProductUpdatePayload = {};
+      (Object.entries(editForm) as [keyof ProductUpdatePayload, string | undefined][]).forEach(([key, value]) => {
+        payload[key] = value ? value : undefined;
+      });
+      const updated = await updateProduct(product.id, payload);
+      setProduct(updated);
+      setIsEditOpen(false);
+    } catch (err) {
+      const axiosErr = err as AxiosError<{ message?: string }>;
+      setEditError(axiosErr.response?.data?.message ?? "Failed to update product.");
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!params.id) return;
+    let cancelled = false;
+
+    setLoading(true);
+    setLoadError("");
+
+    getProductById(params.id)
+      .then((data) => {
+        if (!cancelled) setProduct(data);
+      })
+      .catch((err: AxiosError<{ message?: string }>) => {
+        if (!cancelled) setLoadError(err.response?.data?.message ?? "Failed to load product.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [params.id]);
+
+  useEffect(() => {
+    if (!params.id) return;
+    let cancelled = false;
+
+    getAmazonProductMetrics(params.id)
+      .then((snapshots) => {
+        if (cancelled) return;
+        setLatestMetric(snapshots.latest);
+        const merged = snapshots.latest
+          ? [snapshots.latest, ...snapshots.history.filter((h) => h.id !== snapshots.latest!.id)]
+          : snapshots.history;
+        setMetricHistory(merged);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLatestMetric(null);
+          setMetricHistory([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [params.id]);
+
   const [activeTab, setActiveTab] = useState<Tab>("Overview");
   const [priceRange, setPriceRange] = useState<(typeof TIME_RANGES)[number]>("1 Year");
 
@@ -238,27 +518,46 @@ export default function ProductDetailPage() {
   const [notes, setNotes] = useState(NOTES);
   const [draftNote, setDraftNote] = useState("");
 
-  const scoreInfo = scoreLabelInfo(PRODUCT.score);
+  const scoreInfo = scoreLabelInfo(MOCK_SCORE);
 
-  const rangeSlice: Record<(typeof TIME_RANGES)[number], number> = {
-    "7 Days": 1,
-    "1 Month": 1,
-    "3 Months": 3,
-    "6 Months": 6,
-    "1 Year": 13,
-    All: 13,
-  };
-  const sliceCount = rangeSlice[priceRange];
-  const months = MONTH_LABELS.slice(-sliceCount);
-  const buyBox = PRICE_SERIES.buyBox.slice(-sliceCount);
-  const amazon = PRICE_SERIES.amazon.slice(-sliceCount);
-  const fba = PRICE_SERIES.fba.slice(-sliceCount);
-  const fbm = PRICE_SERIES.fbm.slice(-sliceCount);
-  const rank = PRICE_SERIES.rank.slice(-sliceCount);
-  const bsrSlice = BSR_TREND.slice(-sliceCount);
+  const allPoints = toMetricPoints(metricHistory);
+  const rangedPoints = filterPointsByRange(allPoints, priceRange);
+  const hasHistory = allPoints.length > 0;
+  const bsrTrend = computeBsrTrend(allPoints);
+
+  const priceStats = (() => {
+    if (allPoints.length === 0) return null;
+    const now = allPoints[allPoints.length - 1].date.getTime();
+    const last30 = allPoints.filter((p) => now - p.date.getTime() <= 30 * 24 * 60 * 60 * 1000);
+    const last12mo = allPoints.filter((p) => now - p.date.getTime() <= 365 * 24 * 60 * 60 * 1000);
+    const avgSource = last30.length > 0 ? last30 : allPoints;
+    const highLowSource = last12mo.length > 0 ? last12mo : allPoints;
+    return {
+      current: allPoints[allPoints.length - 1].buybox_price,
+      avg30: avgSource.reduce((sum, p) => sum + p.buybox_price, 0) / avgSource.length,
+      high12mo: Math.max(...highLowSource.map((p) => p.buybox_price)),
+      low12mo: Math.min(...highLowSource.map((p) => p.buybox_price)),
+    };
+  })();
 
   const chartW = 600;
   const chartH = 220;
+
+  if (loading) {
+    return (
+      <div className="bg-card-bg border-b border-border px-6 py-4">
+        <p className="text-muted text-sm">Loading product…</p>
+      </div>
+    );
+  }
+
+  if (loadError || !product) {
+    return (
+      <div className="bg-card-bg border-b border-border px-6 py-4">
+        <p className="text-rose text-sm">{loadError || "Product not found."}</p>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -274,17 +573,17 @@ export default function ProductDetailPage() {
               </svg>
             </div>
             <div className="min-w-0">
-              <h1 className="text-heading font-bold text-xl">{PRODUCT.supplierTitle}</h1>
-              <p className="text-muted text-sm mt-0.5">{PRODUCT.amazonTitle}</p>
+              <h1 className="text-heading font-bold text-xl">{product.amazon_title || "Untitled Product"}</h1>
               <div className="mt-2 flex gap-4 text-xs text-muted flex-wrap">
-                <span>ASIN: {PRODUCT.asin}</span>
-                <span>EAN: {PRODUCT.ean}</span>
-                <span>Brand: {PRODUCT.brand}</span>
-                <span>Category: {PRODUCT.category}</span>
+                <span>ASIN: {product.asin || "—"}</span>
+                <span>EAN: {product.ean || "—"}</span>
+                <span>UPC: {product.upc || "—"}</span>
+                <span>Brand: {product.brand || "—"}</span>
+                <span>Category: {product.category || "—"}</span>
               </div>
               <div className="mt-3 flex items-center gap-3">
                 <span className="bg-mint-bg text-mint border border-mint/30 rounded-full px-3 py-1 text-sm font-semibold">
-                  Match Score: {PRODUCT.matchScore}%
+                  Match Score: {MOCK_MATCH_SCORE}%
                 </span>
                 <a
                   href="#"
@@ -299,6 +598,9 @@ export default function ProductDetailPage() {
                     <line x1="10" y1="14" x2="21" y2="3" />
                   </svg>
                 </a>
+                <Button variant="outline" size="sm" onClick={openEdit}>
+                  Edit Product
+                </Button>
               </div>
             </div>
           </div>
@@ -306,7 +608,7 @@ export default function ProductDetailPage() {
           {/* MarginLane Score */}
           <div className="bg-section-bg rounded-xl p-4 text-center w-48 shrink-0">
             <div className="flex items-baseline justify-center gap-1">
-              <span className="text-heading font-bold text-5xl">{PRODUCT.score}</span>
+              <span className="text-heading font-bold text-5xl">{MOCK_SCORE}</span>
               <span className="text-muted text-sm">/ 100</span>
             </div>
             <span className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-semibold ${scoreInfo.cls}`}>{scoreInfo.text}</span>
@@ -314,15 +616,32 @@ export default function ProductDetailPage() {
           </div>
 
           {/* Amazon Metrics */}
-          <div className="grid grid-cols-4 gap-4 flex-1 min-w-[420px]">
+          <div className="flex-1 min-w-[420px]">
+          {latestMetric && (
+            <div className="flex justify-end mb-1">
+              <Button variant="ghost" size="sm" onClick={openMetricEdit}>Edit Metrics</Button>
+            </div>
+          )}
+          <div className="grid grid-cols-4 gap-4">
             <div>
               <p className="text-muted text-xs">BSR (Health & Personal Care)</p>
-              <p className="text-heading font-semibold text-base">#{AMAZON_METRICS.bsr.toLocaleString()}</p>
-              <p className="text-mint text-xs">▲{AMAZON_METRICS.bsrTrend30d}% last 30 days</p>
+              <p className="text-heading font-semibold text-base">
+                #{(latestMetric?.sales_rank ?? AMAZON_METRICS.bsr).toLocaleString()}
+              </p>
+              {latestMetric && bsrTrend !== null ? (
+                <p className={`text-xs ${bsrTrend >= 0 ? "text-mint" : "text-rose"}`}>
+                  {bsrTrend >= 0 ? "▲" : "▼"}
+                  {Math.abs(bsrTrend).toFixed(1)}% last 30 days
+                </p>
+              ) : (
+                !latestMetric && <p className="text-mint text-xs">▲{AMAZON_METRICS.bsrTrend30d}% last 30 days</p>
+              )}
             </div>
             <div>
               <p className="text-muted text-xs">Buy Box Price</p>
-              <p className="text-heading font-semibold text-base">€{AMAZON_METRICS.buyBoxPrice.toFixed(2)}</p>
+              <p className="text-heading font-semibold text-base">
+                €{(latestMetric?.buybox_price ?? AMAZON_METRICS.buyBoxPrice).toFixed(2)}
+              </p>
             </div>
             <div>
               <p className="text-muted text-xs">Lowest FBA Price</p>
@@ -353,6 +672,7 @@ export default function ProductDetailPage() {
                 {AMAZON_METRICS.rating}
               </p>
             </div>
+          </div>
           </div>
         </div>
       </div>
@@ -583,10 +903,16 @@ export default function ProductDetailPage() {
                 </tbody>
               </table>
               <div className="flex gap-4 mt-4 text-muted text-xs flex-wrap">
-                <span>Current Buy Box: €49.90</span>
-                <span>Last 30-day avg: €47.30</span>
-                <span>12-month high: €56.90</span>
-                <span>12-month low: €34.90</span>
+                {priceStats ? (
+                  <>
+                    <span>Current Buy Box: €{priceStats.current.toFixed(2)}</span>
+                    <span>Last 30-day avg: €{priceStats.avg30.toFixed(2)}</span>
+                    <span>12-month high: €{priceStats.high12mo.toFixed(2)}</span>
+                    <span>12-month low: €{priceStats.low12mo.toFixed(2)}</span>
+                  </>
+                ) : (
+                  <span>No price history recorded for this product yet.</span>
+                )}
               </div>
             </div>
           </div>
@@ -621,7 +947,7 @@ export default function ProductDetailPage() {
                     Add to Product Pool
                   </span>
                 </Button>
-                <Button variant="outline" size="md" className="w-full">
+                <Button variant="outline" size="md" className="w-full" onClick={openShortlistModal}>
                   <span className="flex items-center justify-center gap-2">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
@@ -629,7 +955,7 @@ export default function ProductDetailPage() {
                     Add to Shortlist
                   </span>
                 </Button>
-                <Button variant="outline" size="md" className="w-full">
+                <Button variant="outline" size="md" className="w-full" onClick={openCreatePO}>
                   <span className="flex items-center justify-center gap-2">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -656,7 +982,7 @@ export default function ProductDetailPage() {
       {activeTab === "Price History" && (
         <div className="bg-card-bg border border-border rounded-xl p-6 m-6">
           <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
-            <h2 className="text-heading font-semibold text-base">1-Year Price History</h2>
+            <h2 className="text-heading font-semibold text-base">Price History</h2>
             <div className="flex gap-2">
               {TIME_RANGES.map((r) => (
                 <button
@@ -674,30 +1000,65 @@ export default function ProductDetailPage() {
 
           <div className="flex gap-4 flex-wrap mb-3 text-xs">
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-blue-500" />Buy Box Price</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-heading" />Amazon Price</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-mint" />FBA Price</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-rose" />FBM Price</span>
             <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-full bg-purple-500" />Sales Rank</span>
           </div>
 
-          <div className="w-full h-64">
-            <svg viewBox={`0 0 ${chartW} ${chartH + 30}`} className="w-full h-full">
-              <polyline points={seriesToPath(buyBox, 20, 60, chartW, chartH)} fill="none" stroke="#3b82f6" strokeWidth="2" />
-              <polyline points={seriesToPath(amazon, 20, 60, chartW, chartH)} fill="none" stroke="#2c3570" strokeWidth="2" />
-              <polyline points={seriesToPath(fba, 20, 60, chartW, chartH)} fill="none" stroke="#81c784" strokeWidth="2" />
-              <polyline points={seriesToPath(fbm, 20, 60, chartW, chartH)} fill="none" stroke="#f48fb1" strokeWidth="2" />
-              <polyline points={seriesToPath(rank, 500, 2500, chartW, chartH)} fill="none" stroke="#a855f7" strokeWidth="2" strokeDasharray="5,4" />
-              {months.map((m, i) => (
-                <text key={m} x={(i / (months.length - 1)) * chartW} y={chartH + 20} fontSize="10" textAnchor="middle" className="fill-muted">
-                  {m}
-                </text>
-              ))}
-            </svg>
-          </div>
-          <div className="flex justify-between text-muted text-xs mt-1">
-            <span>€20 – €60</span>
-            <span>#500 – #2500</span>
-          </div>
+          {hasHistory && rangedPoints.length > 0 ? (
+            (() => {
+              const priceValues = rangedPoints.map((p) => p.buybox_price);
+              const rankValues = rangedPoints.map((p) => p.sales_rank);
+              const priceMin = Math.min(...priceValues);
+              const priceMax = Math.max(...priceValues);
+              const rankMin = Math.min(...rankValues);
+              const rankMax = Math.max(...rankValues);
+              return (
+                <>
+                  <div className="w-full h-64">
+                    <svg viewBox={`0 0 ${chartW} ${chartH + 30}`} className="w-full h-full">
+                      <polyline
+                        points={seriesToPath(priceValues, priceMin, priceMax, chartW, chartH)}
+                        fill="none"
+                        stroke="#3b82f6"
+                        strokeWidth="2"
+                      />
+                      <polyline
+                        points={seriesToPath(rankValues, rankMin, rankMax, chartW, chartH)}
+                        fill="none"
+                        stroke="#a855f7"
+                        strokeWidth="2"
+                        strokeDasharray="5,4"
+                      />
+                      {rangedPoints.map((p, i) => (
+                        <text
+                          key={p.date.toISOString()}
+                          x={(i / Math.max(rangedPoints.length - 1, 1)) * chartW}
+                          y={chartH + 20}
+                          fontSize="10"
+                          textAnchor="middle"
+                          className="fill-muted"
+                        >
+                          {rangedPoints.length <= 8 || i % Math.ceil(rangedPoints.length / 8) === 0
+                            ? p.date.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })
+                            : ""}
+                        </text>
+                      ))}
+                    </svg>
+                  </div>
+                  <div className="flex justify-between text-muted text-xs mt-1">
+                    <span>€{priceMin.toFixed(2)} – €{priceMax.toFixed(2)}</span>
+                    <span>#{rankMin.toLocaleString()} – #{rankMax.toLocaleString()}</span>
+                  </div>
+                </>
+              );
+            })()
+          ) : (
+            <p className="text-muted text-sm py-10 text-center">
+              No price history recorded for this product yet.
+            </p>
+          )}
+          <p className="text-muted text-xs mt-3">
+            Amazon / FBA / FBM price lines aren&apos;t available yet — the backend only tracks Buy Box price and sales rank per snapshot.
+          </p>
         </div>
       )}
 
@@ -723,17 +1084,42 @@ export default function ProductDetailPage() {
             </div>
           </div>
 
-          <h3 className="text-heading font-semibold text-sm mb-3">BSR Trend (Last 1 Year)</h3>
-          <div className="w-full h-48">
-            <svg viewBox={`0 0 ${chartW} 180`} className="w-full h-full">
-              <polyline points={seriesToPath([...bsrSlice].reverse(), 1000, 2500, chartW, 160)} fill="none" stroke="#7986cb" strokeWidth="2" />
-              {months.map((m, i) => (
-                <text key={m} x={(i / (months.length - 1)) * chartW} y={175} fontSize="10" textAnchor="middle" className="fill-muted">
-                  {m}
-                </text>
-              ))}
-            </svg>
-          </div>
+          <h3 className="text-heading font-semibold text-sm mb-3">BSR Trend</h3>
+          {hasHistory && rangedPoints.length > 0 ? (
+            (() => {
+              const rankValues = rangedPoints.map((p) => p.sales_rank);
+              const rankMin = Math.min(...rankValues);
+              const rankMax = Math.max(...rankValues);
+              return (
+                <div className="w-full h-48">
+                  <svg viewBox={`0 0 ${chartW} 180`} className="w-full h-full">
+                    <polyline
+                      points={seriesToPath(rankValues, rankMin, rankMax, chartW, 160)}
+                      fill="none"
+                      stroke="#7986cb"
+                      strokeWidth="2"
+                    />
+                    {rangedPoints.map((p, i) => (
+                      <text
+                        key={p.date.toISOString()}
+                        x={(i / Math.max(rangedPoints.length - 1, 1)) * chartW}
+                        y={175}
+                        fontSize="10"
+                        textAnchor="middle"
+                        className="fill-muted"
+                      >
+                        {rangedPoints.length <= 8 || i % Math.ceil(rangedPoints.length / 8) === 0
+                          ? p.date.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })
+                          : ""}
+                      </text>
+                    ))}
+                  </svg>
+                </div>
+              );
+            })()
+          ) : (
+            <p className="text-muted text-sm py-10 text-center">No BSR history recorded for this product yet.</p>
+          )}
         </div>
       )}
 
@@ -923,6 +1309,236 @@ export default function ProductDetailPage() {
           </div>
         </div>
       )}
+
+      {/* Add to Shortlist Modal */}
+      <Modal isOpen={isShortlistOpen} onClose={() => setIsShortlistOpen(false)}>
+        <div className="bg-card-bg rounded-2xl border border-border shadow-xl overflow-hidden max-w-md">
+          <div className="px-6 py-4 border-b border-border">
+            <h2 className="text-heading font-semibold text-lg">Add to Shortlist</h2>
+          </div>
+          <div className="px-6 py-5 space-y-3 max-h-[60vh] overflow-y-auto">
+            {shortlistsLoading ? (
+              <p className="text-muted text-sm">Loading shortlists…</p>
+            ) : shortlists.length === 0 ? (
+              <p className="text-muted text-sm">You don&apos;t have any shortlists yet — create one below.</p>
+            ) : (
+              <div className="space-y-2">
+                {shortlists.map((s) => (
+                  <div key={s.id} className="flex items-center justify-between border border-border rounded-lg px-3 py-2">
+                    <span className="text-body text-sm">{s.name}</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={addingShortlistId === s.id}
+                      onClick={() => handleAddToShortlist(s.id)}
+                    >
+                      {addingShortlistId === s.id ? "Adding…" : "Add"}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="border-t border-border pt-3 flex items-end gap-2">
+              <div className="flex-1">
+                <Input
+                  label="New Shortlist"
+                  placeholder="e.g. Q3 Kitchen Ideas"
+                  value={newShortlistName}
+                  onChange={(e) => setNewShortlistName(e.target.value)}
+                />
+              </div>
+              <Button
+                variant="primary"
+                size="md"
+                disabled={creatingShortlist || !newShortlistName.trim()}
+                onClick={handleCreateShortlistAndAdd}
+              >
+                {creatingShortlist ? "Creating…" : "Create & Add"}
+              </Button>
+            </div>
+
+            {shortlistSuccess && <p className="text-mint text-sm bg-mint-bg px-3 py-2 rounded-lg">{shortlistSuccess}</p>}
+            {shortlistError && <p className="text-rose text-sm bg-rose-bg px-3 py-2 rounded-lg">{shortlistError}</p>}
+          </div>
+          <div className="flex gap-2 justify-end px-6 py-4 border-t border-border">
+            <Button variant="ghost" size="md" onClick={() => setIsShortlistOpen(false)}>
+              Close
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Create PO Modal */}
+      <Modal isOpen={isCreatePOOpen} onClose={() => setIsCreatePOOpen(false)}>
+        <div className="bg-card-bg rounded-2xl border border-border shadow-xl overflow-hidden max-w-md">
+          <div className="px-6 py-4 border-b border-border">
+            <h2 className="text-heading font-semibold text-lg">Create Purchase Order</h2>
+          </div>
+          <div className="px-6 py-5 space-y-3">
+            {poLoading ? (
+              <p className="text-muted text-sm">Loading suppliers…</p>
+            ) : poSupplierProducts.length === 0 ? (
+              <p className="text-muted text-sm">
+                No supplier is linked to this product yet. Link one from the Suppliers page first.
+              </p>
+            ) : (
+              <>
+                <div>
+                  <label className="text-muted text-xs font-medium block mb-1">Supplier Product</label>
+                  <select
+                    value={poSupplierProductId}
+                    onChange={(e) => setPoSupplierProductId(e.target.value)}
+                    className="w-full px-3 py-2 text-sm text-body bg-page-bg border border-border rounded-lg outline-none focus:border-primary"
+                  >
+                    <option value="">Select a supplier…</option>
+                    {poSupplierProducts.map((sp) => (
+                      <option key={sp.id} value={sp.id}>
+                        {sp.supplier?.name ?? sp.supplier_id} — {sp.currency} {sp.cost_price}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <Input
+                  label="Quantity"
+                  type="number"
+                  min={1}
+                  value={poQty}
+                  onChange={(e) => setPoQty(e.target.value)}
+                />
+              </>
+            )}
+            {poSuccess && <p className="text-mint text-sm bg-mint-bg px-3 py-2 rounded-lg">{poSuccess}</p>}
+            {poError && <p className="text-rose text-sm bg-rose-bg px-3 py-2 rounded-lg">{poError}</p>}
+          </div>
+          <div className="flex gap-2 justify-end px-6 py-4 border-t border-border">
+            <Button variant="ghost" size="md" onClick={() => setIsCreatePOOpen(false)}>
+              {poSuccess ? "Close" : "Cancel"}
+            </Button>
+            {!poSuccess && (
+              <Button
+                variant="primary"
+                size="md"
+                disabled={poSaving || !poSupplierProductId}
+                onClick={handleCreatePO}
+              >
+                {poSaving ? "Creating…" : "Create PO"}
+              </Button>
+            )}
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Product Modal */}
+      <Modal isOpen={isEditOpen} onClose={() => setIsEditOpen(false)}>
+        <div className="bg-card-bg rounded-2xl border border-border shadow-xl overflow-hidden max-w-md">
+          <div className="px-6 py-4 border-b border-border">
+            <h2 className="text-heading font-semibold text-lg">Edit Product</h2>
+          </div>
+          <div className="px-6 py-5 space-y-3 max-h-[70vh] overflow-y-auto">
+            <Input
+              label="Product Title"
+              value={editForm.amazon_title ?? ""}
+              onChange={(e) => setEditForm((prev) => ({ ...prev, amazon_title: e.target.value }))}
+            />
+            <Input
+              label="Brand"
+              value={editForm.brand ?? ""}
+              onChange={(e) => setEditForm((prev) => ({ ...prev, brand: e.target.value }))}
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="UPC"
+                value={editForm.upc ?? ""}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, upc: e.target.value }))}
+              />
+              <Input
+                label="EAN"
+                value={editForm.ean ?? ""}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, ean: e.target.value }))}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Model Number"
+                value={editForm.model_number ?? ""}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, model_number: e.target.value }))}
+              />
+              <Input
+                label="Category"
+                value={editForm.category ?? ""}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, category: e.target.value }))}
+              />
+            </div>
+            <Input
+              label="Image URL"
+              value={editForm.image_url ?? ""}
+              onChange={(e) => setEditForm((prev) => ({ ...prev, image_url: e.target.value }))}
+            />
+            {editError && <p className="text-rose text-sm bg-rose-bg px-3 py-2 rounded-lg">{editError}</p>}
+          </div>
+          <div className="flex gap-2 justify-end px-6 py-4 border-t border-border">
+            <Button variant="ghost" size="md" onClick={() => setIsEditOpen(false)} disabled={editSaving}>
+              Cancel
+            </Button>
+            <Button variant="primary" size="md" onClick={handleEditSave} disabled={editSaving}>
+              {editSaving ? "Saving…" : "Save Changes"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Metrics Modal */}
+      <Modal isOpen={isMetricEditOpen} onClose={() => setIsMetricEditOpen(false)}>
+        <div className="bg-card-bg rounded-2xl border border-border shadow-xl overflow-hidden max-w-md">
+          <div className="px-6 py-4 border-b border-border">
+            <h2 className="text-heading font-semibold text-lg">Edit Amazon Metrics</h2>
+          </div>
+          <div className="px-6 py-5 space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Buy Box Price"
+                type="number"
+                step="0.01"
+                value={metricForm.buybox_price ?? ""}
+                onChange={(e) => setMetricForm((prev) => ({ ...prev, buybox_price: parseFloat(e.target.value) || undefined }))}
+              />
+              <Input
+                label="BSR (Sales Rank)"
+                type="number"
+                value={metricForm.sales_rank ?? ""}
+                onChange={(e) => setMetricForm((prev) => ({ ...prev, sales_rank: parseInt(e.target.value) || undefined }))}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Input
+                label="Amazon Fee"
+                type="number"
+                step="0.01"
+                value={metricForm.amazon_fee ?? ""}
+                onChange={(e) => setMetricForm((prev) => ({ ...prev, amazon_fee: parseFloat(e.target.value) || undefined }))}
+              />
+              <Input
+                label="FBA Fee"
+                type="number"
+                step="0.01"
+                value={metricForm.fba_fee ?? ""}
+                onChange={(e) => setMetricForm((prev) => ({ ...prev, fba_fee: parseFloat(e.target.value) || undefined }))}
+              />
+            </div>
+            <p className="text-muted text-xs">ROI is recalculated automatically from Buy Box Price, Amazon Fee, and FBA Fee.</p>
+            {metricError && <p className="text-rose text-sm bg-rose-bg px-3 py-2 rounded-lg">{metricError}</p>}
+          </div>
+          <div className="flex gap-2 justify-end px-6 py-4 border-t border-border">
+            <Button variant="ghost" size="md" onClick={() => setIsMetricEditOpen(false)} disabled={metricSaving}>
+              Cancel
+            </Button>
+            <Button variant="primary" size="md" onClick={handleMetricSave} disabled={metricSaving}>
+              {metricSaving ? "Saving…" : "Save Changes"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

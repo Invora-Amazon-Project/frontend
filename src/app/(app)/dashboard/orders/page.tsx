@@ -1,217 +1,32 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { AxiosError } from "axios";
 import Button from "@/components/ui/Button";
+import Input from "@/components/ui/Input";
+import Modal from "@/components/ui/Modal";
 import StatusBadge from "@/components/admin/StatusBadge";
-import type { Order, OrderStatus } from "@/types";
+import { useAppSelector } from "@/lib/hooks";
+import { getSuppliers, type SupplierRecord } from "@/lib/services/suppliersService";
+import { getSupplierProducts, type SupplierProductRecord } from "@/lib/services/supplierProductsService";
+import {
+  createOrder,
+  getOrders,
+  updateOrder,
+  type OrderRecord,
+  type OrderStatus,
+} from "@/lib/services/ordersService";
+import {
+  createOrderItem,
+  deleteOrderItem,
+  getOrderItems,
+  updateOrderItem,
+  type OrderItemRecord,
+} from "@/lib/services/orderItemsService";
 
-// TODO: Replace with real API call — GET /orders
+const STATUSES: OrderStatus[] = ["DRAFT", "PENDING", "COMPLETED", "CANCELLED"];
 
-const MOCK_ORDERS: Order[] = [
-  {
-    id: "ORD-0024",
-    supplierId: "s1",
-    supplierName: "Shanghai Source Co.",
-    status: "draft",
-    totalCost: 840.00,
-    expectedProfit: 1260.00,
-    expectedRoi: 50,
-    shipping: 95.00,
-    taxAndCustoms: 42.00,
-    notes: "Waiting on final quote for tong set — confirm MOQ before sending.",
-    createdAt: "2026-07-06T09:00:00Z",
-    updatedAt: "2026-07-06T09:00:00Z",
-    products: [
-      { productId: "p1", productName: "Silicone Kitchen Tongs Set 2-Pack", asin: "B08XK3LMND", quantity: 100, unitCost: 4.20, totalCost: 420.00, estimatedSalePrice: 17.49, expectedProfit: 630.00 },
-      { productId: "p8", productName: "Wooden Spoon Set 6-Piece", asin: "B07KF16JZL", quantity: 120, unitCost: 3.50, totalCost: 420.00, estimatedSalePrice: 12.49, expectedProfit: 630.00 },
-    ],
-  },
-  {
-    id: "ORD-0023",
-    supplierId: "s2",
-    supplierName: "Royal Trading Ltd.",
-    status: "waiting_confirmation",
-    totalCost: 765.00,
-    expectedProfit: 1044.00,
-    expectedRoi: 54,
-    shipping: 120.00,
-    taxAndCustoms: 48.00,
-    createdAt: "2026-07-05T14:30:00Z",
-    updatedAt: "2026-07-05T18:00:00Z",
-    products: [
-      { productId: "p2", productName: "Bamboo Cutting Board Large 18x12", asin: "B07THGP5WK", quantity: 75, unitCost: 10.20, totalCost: 765.00, estimatedSalePrice: 26.49, expectedProfit: 1044.00 },
-    ],
-  },
-  {
-    id: "ORD-0022",
-    supplierId: "s3",
-    supplierName: "Nomader Europe GmbH",
-    status: "shipped",
-    totalCost: 1080.00,
-    expectedProfit: 1186.00,
-    expectedRoi: 51,
-    shipping: 160.00,
-    taxAndCustoms: 80.00,
-    trackingNumber: "CN748291047DE",
-    createdAt: "2026-06-28T10:00:00Z",
-    updatedAt: "2026-07-02T08:15:00Z",
-    products: [
-      { productId: "p5", productName: "Collapsible Silicone Water Bottle 750ml", asin: "B08ZTLMKPD", quantity: 200, unitCost: 5.40, totalCost: 1080.00, estimatedSalePrice: 13.95, expectedProfit: 1186.00 },
-    ],
-  },
-  {
-    id: "ORD-0021",
-    supplierId: "s4",
-    supplierName: "Brieftons International",
-    status: "completed",
-    totalCost: 1368.00,
-    expectedProfit: 1241.00,
-    expectedRoi: 47,
-    shipping: 200.00,
-    taxAndCustoms: 108.00,
-    createdAt: "2026-06-10T08:00:00Z",
-    updatedAt: "2026-06-30T12:00:00Z",
-    products: [
-      { productId: "p10", productName: "Vegetable Spiralizer 5-Blade", asin: "B00GRIR87U", quantity: 120, unitCost: 11.40, totalCost: 1368.00, estimatedSalePrice: 28.49, expectedProfit: 1241.00 },
-    ],
-  },
-  {
-    id: "ORD-0020",
-    supplierId: "s1",
-    supplierName: "Shanghai Source Co.",
-    status: "shipped",
-    totalCost: 980.00,
-    expectedProfit: 1470.00,
-    expectedRoi: 50,
-    shipping: 115.00,
-    taxAndCustoms: 55.00,
-    trackingNumber: "SH120394850CN",
-    createdAt: "2026-06-20T09:30:00Z",
-    updatedAt: "2026-06-25T11:00:00Z",
-    products: [
-      { productId: "p1", productName: "Silicone Kitchen Tongs Set 2-Pack", asin: "B08XK3LMND", quantity: 100, unitCost: 4.20, totalCost: 420.00, estimatedSalePrice: 17.49, expectedProfit: 630.00 },
-      { productId: "p2", productName: "Bamboo Cutting Board Large 18x12", asin: "B07THGP5WK", quantity: 50, unitCost: 11.20, totalCost: 560.00, estimatedSalePrice: 26.49, expectedProfit: 840.00 },
-    ],
-  },
-  {
-    id: "ORD-0019",
-    supplierId: "s2",
-    supplierName: "Royal Trading Ltd.",
-    status: "shipped",
-    totalCost: 612.00,
-    expectedProfit: 508.00,
-    expectedRoi: 44,
-    shipping: 90.00,
-    taxAndCustoms: 36.00,
-    trackingNumber: "RT884729301GB",
-    createdAt: "2026-06-18T13:00:00Z",
-    updatedAt: "2026-06-22T09:45:00Z",
-    products: [
-      { productId: "p8", productName: "Wooden Spoon Set 6-Piece", asin: "B07KF16JZL", quantity: 180, unitCost: 3.40, totalCost: 612.00, estimatedSalePrice: 12.49, expectedProfit: 508.00 },
-    ],
-  },
-  {
-    id: "ORD-0018",
-    supplierId: "s3",
-    supplierName: "Nomader Europe GmbH",
-    status: "cancelled",
-    totalCost: 540.00,
-    expectedProfit: 593.00,
-    expectedRoi: 51,
-    shipping: 80.00,
-    taxAndCustoms: 40.00,
-    notes: "Cancelled — supplier unable to meet delivery deadline. Will retry next quarter.",
-    createdAt: "2026-06-05T10:00:00Z",
-    updatedAt: "2026-06-08T14:00:00Z",
-    products: [
-      { productId: "p5", productName: "Collapsible Silicone Water Bottle 750ml", asin: "B08ZTLMKPD", quantity: 100, unitCost: 5.40, totalCost: 540.00, estimatedSalePrice: 13.95, expectedProfit: 593.00 },
-    ],
-  },
-  {
-    id: "ORD-0017",
-    supplierId: "s4",
-    supplierName: "Brieftons International",
-    status: "draft",
-    totalCost: 1140.00,
-    expectedProfit: 1034.00,
-    expectedRoi: 47,
-    shipping: 175.00,
-    taxAndCustoms: 90.00,
-    notes: "Draft for next restock cycle. Finalize quantities before sending.",
-    createdAt: "2026-07-04T16:00:00Z",
-    updatedAt: "2026-07-04T16:00:00Z",
-    products: [
-      { productId: "p10", productName: "Vegetable Spiralizer 5-Blade", asin: "B00GRIR87U", quantity: 100, unitCost: 11.40, totalCost: 1140.00, estimatedSalePrice: 28.49, expectedProfit: 1034.00 },
-    ],
-  },
-];
-
-interface StatusHistory {
-  status: OrderStatus;
-  date: string;
-  note: string;
-}
-
-const MOCK_STATUS_HISTORY: Record<string, StatusHistory[]> = {
-  "ORD-0024": [
-    { status: "draft", date: "2026-07-06", note: "Order created as draft" },
-  ],
-  "ORD-0023": [
-    { status: "draft", date: "2026-07-05", note: "Order created" },
-    { status: "sent_to_supplier", date: "2026-07-05", note: "Sent to Royal Trading Ltd." },
-    { status: "waiting_confirmation", date: "2026-07-05", note: "Awaiting supplier confirmation" },
-  ],
-  "ORD-0022": [
-    { status: "draft", date: "2026-06-28", note: "Order created" },
-    { status: "confirmed", date: "2026-06-29", note: "Supplier confirmed the order" },
-    { status: "paid", date: "2026-06-30", note: "Payment sent via wire transfer" },
-    { status: "shipped", date: "2026-07-02", note: "Shipped. Tracking: CN748291047DE" },
-  ],
-  "ORD-0021": [
-    { status: "draft", date: "2026-06-10", note: "Order created" },
-    { status: "confirmed", date: "2026-06-11", note: "Supplier confirmed" },
-    { status: "paid", date: "2026-06-12", note: "Payment completed" },
-    { status: "shipped", date: "2026-06-18", note: "Items shipped" },
-    { status: "received", date: "2026-06-27", note: "Received at warehouse" },
-    { status: "completed", date: "2026-06-30", note: "Sent to Amazon FBA & confirmed" },
-  ],
-  "ORD-0020": [
-    { status: "draft", date: "2026-06-20", note: "Order created" },
-    { status: "confirmed", date: "2026-06-21", note: "Supplier confirmed" },
-    { status: "paid", date: "2026-06-22", note: "Payment sent" },
-    { status: "shipped", date: "2026-06-25", note: "Tracking: SH120394850CN" },
-  ],
-  "ORD-0019": [
-    { status: "draft", date: "2026-06-18", note: "Order created" },
-    { status: "confirmed", date: "2026-06-19", note: "Confirmed" },
-    { status: "paid", date: "2026-06-20", note: "Payment complete" },
-    { status: "shipped", date: "2026-06-22", note: "Tracking: RT884729301GB" },
-  ],
-  "ORD-0018": [
-    { status: "draft", date: "2026-06-05", note: "Order created" },
-    { status: "sent_to_supplier", date: "2026-06-06", note: "Sent to supplier" },
-    { status: "cancelled", date: "2026-06-08", note: "Cancelled — supplier missed deadline" },
-  ],
-  "ORD-0017": [
-    { status: "draft", date: "2026-07-04", note: "Draft created for next restock" },
-  ],
-};
-
-type TabKey = "all" | "draft" | "active" | "completed" | "cancelled";
-
-const DRAFT_STATUSES: OrderStatus[]     = ["draft", "sent_to_supplier", "payment_pending"];
-const ACTIVE_STATUSES: OrderStatus[]    = ["waiting_confirmation", "confirmed", "paid", "shipped", "received", "sent_to_amazon_fba"];
-const COMPLETE_STATUSES: OrderStatus[]  = ["completed"];
-const CANCELLED_STATUSES: OrderStatus[] = ["cancelled"];
-
-function filterByTab(orders: Order[], tab: TabKey): Order[] {
-  if (tab === "all")       return orders;
-  if (tab === "draft")     return orders.filter((o) => DRAFT_STATUSES.includes(o.status));
-  if (tab === "active")    return orders.filter((o) => ACTIVE_STATUSES.includes(o.status));
-  if (tab === "completed") return orders.filter((o) => COMPLETE_STATUSES.includes(o.status));
-  if (tab === "cancelled") return orders.filter((o) => CANCELLED_STATUSES.includes(o.status));
-  return orders;
-}
+type TabKey = "all" | OrderStatus;
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
@@ -222,22 +37,172 @@ function formatCurrency(n: number) {
 }
 
 export default function OrdersPage() {
-  const [activeTab, setActiveTab]           = useState<TabKey>("all");
+  const workspaceId = useAppSelector((s) => s.workspace.current?.id);
+
+  const [orders, setOrders] = useState<OrderRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [activeTab, setActiveTab] = useState<TabKey>("all");
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
 
-  const filtered      = filterByTab(MOCK_ORDERS, activeTab);
-  const selectedOrder = MOCK_ORDERS.find((o) => o.id === selectedOrderId) ?? null;
-  const statusHistory = selectedOrderId ? (MOCK_STATUS_HISTORY[selectedOrderId] ?? []) : [];
+  const [suppliers, setSuppliers] = useState<SupplierRecord[]>([]);
 
-  const tabCount = (tab: TabKey) => filterByTab(MOCK_ORDERS, tab).length;
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [createSupplierId, setCreateSupplierId] = useState("");
+  const [createSaving, setCreateSaving] = useState(false);
+  const [createError, setCreateError] = useState("");
+
+  const [items, setItems] = useState<OrderItemRecord[]>([]);
+  const [itemsLoading, setItemsLoading] = useState(false);
+  const [itemsError, setItemsError] = useState("");
+
+  const [supplierProducts, setSupplierProducts] = useState<SupplierProductRecord[]>([]);
+
+  const [newItemProductId, setNewItemProductId] = useState("");
+  const [newItemQty, setNewItemQty] = useState("1");
+  const [newItemPrice, setNewItemPrice] = useState("");
+  const [addItemSaving, setAddItemSaving] = useState(false);
+  const [addItemError, setAddItemError] = useState("");
+
+  const [statusSaving, setStatusSaving] = useState(false);
+
+  const loadOrders = () => {
+    if (!workspaceId) return;
+    setLoading(true);
+    setLoadError("");
+    getOrders(workspaceId)
+      .then((data) => setOrders(data))
+      .catch((err: AxiosError<{ message?: string }>) => {
+        setLoadError(err.response?.data?.message ?? "Failed to load orders.");
+      })
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadOrders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workspaceId]);
+
+  useEffect(() => {
+    if (!workspaceId) return;
+    getSuppliers(workspaceId).then(setSuppliers).catch(() => setSuppliers([]));
+    getSupplierProducts(workspaceId).then(setSupplierProducts).catch(() => setSupplierProducts([]));
+  }, [workspaceId]);
+
+  const selectedOrder = orders.find((o) => o.id === selectedOrderId) ?? null;
+
+  useEffect(() => {
+    if (!selectedOrderId) {
+      setItems([]);
+      return;
+    }
+    let cancelled = false;
+    setItemsLoading(true);
+    setItemsError("");
+    getOrderItems(selectedOrderId)
+      .then((data) => {
+        if (!cancelled) setItems(data);
+      })
+      .catch((err: AxiosError<{ message?: string }>) => {
+        if (!cancelled) setItemsError(err.response?.data?.message ?? "Failed to load order items.");
+      })
+      .finally(() => {
+        if (!cancelled) setItemsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedOrderId]);
+
+  const filtered = activeTab === "all" ? orders : orders.filter((o) => o.status === activeTab);
+  const tabCount = (tab: TabKey) => (tab === "all" ? orders.length : orders.filter((o) => o.status === tab).length);
 
   const TABS: { key: TabKey; label: string }[] = [
-    { key: "all",       label: `All (${tabCount("all")})` },
-    { key: "draft",     label: `Draft (${tabCount("draft")})` },
-    { key: "active",    label: `Active (${tabCount("active")})` },
-    { key: "completed", label: `Completed (${tabCount("completed")})` },
-    { key: "cancelled", label: `Cancelled (${tabCount("cancelled")})` },
+    { key: "all", label: `All (${tabCount("all")})` },
+    ...STATUSES.map((s) => ({ key: s, label: `${s.charAt(0)}${s.slice(1).toLowerCase()} (${tabCount(s)})` })),
   ];
+
+  const handleCreateOrder = async () => {
+    if (!workspaceId || !createSupplierId) return;
+    setCreateSaving(true);
+    setCreateError("");
+    try {
+      const order = await createOrder({ workspace_id: workspaceId, supplier_id: createSupplierId, status: "DRAFT" });
+      setOrders((prev) => [order, ...prev]);
+      setIsCreateOpen(false);
+      setCreateSupplierId("");
+      setSelectedOrderId(order.id);
+    } catch (err) {
+      const axiosErr = err as AxiosError<{ message?: string }>;
+      setCreateError(axiosErr.response?.data?.message ?? "Failed to create order.");
+    } finally {
+      setCreateSaving(false);
+    }
+  };
+
+  const handleStatusChange = async (status: OrderStatus) => {
+    if (!selectedOrder) return;
+    setStatusSaving(true);
+    try {
+      const updated = await updateOrder(selectedOrder.id, { status });
+      setOrders((prev) => prev.map((o) => (o.id === updated.id ? { ...o, status: updated.status } : o)));
+    } catch {
+      // silently ignore, user can retry
+    } finally {
+      setStatusSaving(false);
+    }
+  };
+
+  const orderSupplierProducts = selectedOrder
+    ? supplierProducts.filter((sp) => sp.supplier_id === selectedOrder.supplier.id)
+    : [];
+
+  const handleAddItem = async () => {
+    if (!selectedOrder || !newItemProductId) return;
+    setAddItemSaving(true);
+    setAddItemError("");
+    try {
+      const { order_total_price } = await createOrderItem({
+        order_id: selectedOrder.id,
+        supplier_product_id: newItemProductId,
+        quantity: parseInt(newItemQty) || 1,
+        unit_price: parseFloat(newItemPrice) || 0,
+      });
+      setOrders((prev) => prev.map((o) => (o.id === selectedOrder.id ? { ...o, total_price: order_total_price } : o)));
+      const refreshed = await getOrderItems(selectedOrder.id);
+      setItems(refreshed);
+      setNewItemProductId("");
+      setNewItemQty("1");
+      setNewItemPrice("");
+    } catch (err) {
+      const axiosErr = err as AxiosError<{ message?: string }>;
+      setAddItemError(axiosErr.response?.data?.message ?? "Failed to add item.");
+    } finally {
+      setAddItemSaving(false);
+    }
+  };
+
+  const handleRemoveItem = async (id: string) => {
+    if (!selectedOrder) return;
+    try {
+      const { order_total_price } = await deleteOrderItem(id);
+      setItems((prev) => prev.filter((i) => i.id !== id));
+      setOrders((prev) => prev.map((o) => (o.id === selectedOrder.id ? { ...o, total_price: order_total_price } : o)));
+    } catch {
+      // silently ignore, list stays as-is
+    }
+  };
+
+  const handleUpdateQuantity = async (item: OrderItemRecord, quantity: number) => {
+    if (!selectedOrder || quantity < 1) return;
+    try {
+      const { item: updated, order_total_price } = await updateOrderItem(item.id, { quantity });
+      setItems((prev) => prev.map((i) => (i.id === updated.id ? updated : i)));
+      setOrders((prev) => prev.map((o) => (o.id === selectedOrder.id ? { ...o, total_price: order_total_price } : o)));
+    } catch {
+      // silently ignore
+    }
+  };
 
   return (
     <div className="relative">
@@ -247,7 +212,7 @@ export default function OrdersPage() {
           <h1 className="text-heading font-semibold text-2xl">Orders</h1>
           <p className="text-muted text-sm mt-1">Track and manage supplier purchase orders.</p>
         </div>
-        <Button variant="primary" size="sm">
+        <Button variant="primary" size="sm" onClick={() => { setCreateError(""); setIsCreateOpen(true); }}>
           <span className="flex items-center gap-1.5">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -259,22 +224,12 @@ export default function OrdersPage() {
 
       {/* Status summary strip */}
       <div className="grid grid-cols-4 gap-3 mb-6">
-        <div className="bg-card-bg border border-border rounded-lg px-4 py-3">
-          <p className="text-peach font-bold text-xl">2</p>
-          <p className="text-muted text-xs mt-0.5">Draft</p>
-        </div>
-        <div className="bg-card-bg border border-border rounded-lg px-4 py-3">
-          <p className="text-primary font-bold text-xl">1</p>
-          <p className="text-muted text-xs mt-0.5">Awaiting Confirmation</p>
-        </div>
-        <div className="bg-card-bg border border-border rounded-lg px-4 py-3">
-          <p className="text-mint font-bold text-xl">3</p>
-          <p className="text-muted text-xs mt-0.5">Shipped</p>
-        </div>
-        <div className="bg-card-bg border border-border rounded-lg px-4 py-3">
-          <p className="text-muted font-bold text-xl">1</p>
-          <p className="text-muted text-xs mt-0.5">Completed</p>
-        </div>
+        {STATUSES.map((s) => (
+          <div key={s} className="bg-card-bg border border-border rounded-lg px-4 py-3">
+            <p className="text-heading font-bold text-xl">{tabCount(s)}</p>
+            <p className="text-muted text-xs mt-0.5 capitalize">{s.toLowerCase()}</p>
+          </div>
+        ))}
       </div>
 
       {/* Filter tabs */}
@@ -284,9 +239,7 @@ export default function OrdersPage() {
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
             className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors border-b-2 -mb-px cursor-pointer ${
-              activeTab === tab.key
-                ? "border-primary text-primary"
-                : "border-transparent text-muted hover:text-body"
+              activeTab === tab.key ? "border-primary text-primary" : "border-transparent text-muted hover:text-body"
             }`}
           >
             {tab.label}
@@ -296,89 +249,122 @@ export default function OrdersPage() {
 
       {/* Table */}
       <div className="bg-card-bg border border-border rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border bg-section-bg">
-              <th className="text-left text-muted font-medium px-4 py-3 text-xs uppercase tracking-wide">Order ID</th>
-              <th className="text-left text-muted font-medium px-4 py-3 text-xs uppercase tracking-wide">Supplier</th>
-              <th className="text-left text-muted font-medium px-4 py-3 text-xs uppercase tracking-wide">Products</th>
-              <th className="text-left text-muted font-medium px-4 py-3 text-xs uppercase tracking-wide">Total Cost</th>
-              <th className="text-left text-muted font-medium px-4 py-3 text-xs uppercase tracking-wide">Expected ROI</th>
-              <th className="text-left text-muted font-medium px-4 py-3 text-xs uppercase tracking-wide">Status</th>
-              <th className="text-left text-muted font-medium px-4 py-3 text-xs uppercase tracking-wide">Created</th>
-              <th className="text-left text-muted font-medium px-4 py-3 text-xs uppercase tracking-wide">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((order, idx) => (
-              <tr
-                key={order.id}
-                className={`border-b border-border last:border-0 hover:bg-page-bg transition-colors cursor-pointer ${
-                  selectedOrderId === order.id ? "bg-primary-light/40" : ""
-                } ${idx % 2 === 0 ? "" : ""}`}
-                onClick={() => setSelectedOrderId(order.id === selectedOrderId ? null : order.id)}
-              >
-                <td className="px-4 py-3">
-                  <span className="font-mono text-xs text-muted">#{order.id}</span>
-                </td>
-                <td className="px-4 py-3">
-                  <span className="text-body text-sm font-medium">{order.supplierName}</span>
-                </td>
-                <td className="px-4 py-3">
-                  <span className="text-muted text-sm">{order.products.length} product{order.products.length !== 1 ? "s" : ""}</span>
-                </td>
-                <td className="px-4 py-3">
-                  <span className="text-heading font-medium">{formatCurrency(order.totalCost)}</span>
-                </td>
-                <td className="px-4 py-3">
-                  <span className="text-mint font-medium">+{order.expectedRoi}%</span>
-                </td>
-                <td className="px-4 py-3">
-                  <StatusBadge status={order.status} />
-                </td>
-                <td className="px-4 py-3">
-                  <span className="text-muted text-sm">{formatDate(order.createdAt)}</span>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setSelectedOrderId(order.id === selectedOrderId ? null : order.id)}
-                    >
-                      View
-                    </Button>
-                    <Button variant="ghost" size="sm">Update Status</Button>
-                  </div>
-                </td>
+        {loading ? (
+          <p className="text-muted text-sm px-5 py-10 text-center">Loading…</p>
+        ) : loadError ? (
+          <p className="text-rose text-sm px-5 py-10 text-center">{loadError}</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-section-bg">
+                <th className="text-left text-muted font-medium px-4 py-3 text-xs uppercase tracking-wide">Order ID</th>
+                <th className="text-left text-muted font-medium px-4 py-3 text-xs uppercase tracking-wide">Supplier</th>
+                <th className="text-left text-muted font-medium px-4 py-3 text-xs uppercase tracking-wide">Items</th>
+                <th className="text-left text-muted font-medium px-4 py-3 text-xs uppercase tracking-wide">Total</th>
+                <th className="text-left text-muted font-medium px-4 py-3 text-xs uppercase tracking-wide">Status</th>
+                <th className="text-left text-muted font-medium px-4 py-3 text-xs uppercase tracking-wide">Created</th>
+                <th className="text-left text-muted font-medium px-4 py-3 text-xs uppercase tracking-wide">Actions</th>
               </tr>
-            ))}
-            {filtered.length === 0 && (
-              <tr>
-                <td colSpan={8} className="px-4 py-12 text-center text-muted text-sm">
-                  No orders found for this filter.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filtered.map((order) => (
+                <tr
+                  key={order.id}
+                  className={`border-b border-border last:border-0 hover:bg-page-bg transition-colors cursor-pointer ${
+                    selectedOrderId === order.id ? "bg-primary-light/40" : ""
+                  }`}
+                  onClick={() => setSelectedOrderId(order.id === selectedOrderId ? null : order.id)}
+                >
+                  <td className="px-4 py-3">
+                    <span className="font-mono text-xs text-muted">#{order.id.slice(-8)}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="text-body text-sm font-medium">{order.supplier?.name ?? "—"}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="text-muted text-sm">
+                      {order.orderItems.length} item{order.orderItems.length !== 1 ? "s" : ""}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="text-heading font-medium">{formatCurrency(parseFloat(order.total_price))}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <StatusBadge status={order.status.toLowerCase()} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className="text-muted text-sm">{formatDate(order.created_at)}</span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSelectedOrderId(order.id === selectedOrderId ? null : order.id)}
+                      >
+                        View
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-4 py-12 text-center text-muted text-sm">
+                    No orders found for this filter.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        )}
       </div>
+
+      {/* Create Order Modal */}
+      <Modal isOpen={isCreateOpen} onClose={() => setIsCreateOpen(false)}>
+        <div className="bg-card-bg rounded-2xl border border-border shadow-xl overflow-hidden max-w-md">
+          <div className="px-6 py-4 border-b border-border">
+            <h2 className="text-heading font-semibold text-lg">Create Order</h2>
+          </div>
+          <div className="px-6 py-5 space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-body mb-1.5">Supplier</label>
+              <select
+                value={createSupplierId}
+                onChange={(e) => setCreateSupplierId(e.target.value)}
+                className="border border-border rounded-lg px-3 py-2 text-sm bg-page-bg w-full"
+              >
+                <option value="">Select a supplier</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+            <p className="text-muted text-xs">
+              Order is created as a draft with $0 total — add items after creation to build up the order.
+            </p>
+            {createError && <p className="text-rose text-sm bg-rose-bg px-3 py-2 rounded-lg">{createError}</p>}
+          </div>
+          <div className="flex gap-2 justify-end px-6 py-4 border-t border-border">
+            <Button variant="ghost" size="md" onClick={() => setIsCreateOpen(false)} disabled={createSaving}>
+              Cancel
+            </Button>
+            <Button variant="primary" size="md" onClick={handleCreateOrder} disabled={createSaving || !createSupplierId}>
+              {createSaving ? "Creating…" : "Create Order"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Side panel */}
       {selectedOrder && (
         <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-black/20 z-40"
-            onClick={() => setSelectedOrderId(null)}
-          />
-          {/* Panel */}
+          <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setSelectedOrderId(null)} />
           <div className="fixed right-0 top-0 h-full w-96 bg-card-bg border-l border-border shadow-xl z-50 flex flex-col overflow-hidden">
-            {/* Panel header */}
             <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-border shrink-0">
               <div>
-                <p className="font-mono text-xs text-muted mb-1">#{selectedOrder.id}</p>
-                <StatusBadge status={selectedOrder.status} />
+                <p className="font-mono text-xs text-muted mb-1">#{selectedOrder.id.slice(-8)}</p>
+                <StatusBadge status={selectedOrder.status.toLowerCase()} />
               </div>
               <button
                 onClick={() => setSelectedOrderId(null)}
@@ -391,94 +377,141 @@ export default function OrdersPage() {
               </button>
             </div>
 
-            {/* Scrollable content */}
             <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
-
-              {/* Supplier */}
               <div>
                 <p className="text-muted text-xs font-semibold uppercase tracking-wide mb-1.5">Supplier</p>
-                <p className="text-heading text-sm font-medium">{selectedOrder.supplierName}</p>
-                {selectedOrder.trackingNumber && (
-                  <p className="text-muted text-xs mt-1">
-                    Tracking: <span className="font-mono">{selectedOrder.trackingNumber}</span>
-                  </p>
+                <p className="text-heading text-sm font-medium">{selectedOrder.supplier?.name ?? "—"}</p>
+              </div>
+
+              <div>
+                <p className="text-muted text-xs font-semibold uppercase tracking-wide mb-2">Items</p>
+                {itemsLoading ? (
+                  <p className="text-muted text-xs">Loading…</p>
+                ) : itemsError ? (
+                  <p className="text-rose text-xs">{itemsError}</p>
+                ) : (
+                  <div className="space-y-2">
+                    {items.map((item) => (
+                      <div key={item.id} className="bg-section-bg rounded-lg px-3 py-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="text-body text-xs font-medium leading-snug">
+                            {item.supplierProduct?.product?.amazon_title || "Unknown Product"}
+                          </p>
+                          <button onClick={() => handleRemoveItem(item.id)} className="text-muted hover:text-rose transition-colors shrink-0" title="Remove item">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                            </svg>
+                          </button>
+                        </div>
+                        <div className="flex items-center justify-between mt-1.5">
+                          <span className="font-mono text-xs text-muted">{item.supplierProduct?.product?.asin ?? "—"}</span>
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              min={1}
+                              defaultValue={item.quantity}
+                              onBlur={(e) => {
+                                const v = parseInt(e.target.value);
+                                if (v && v !== item.quantity) handleUpdateQuantity(item, v);
+                              }}
+                              className="w-12 border border-border rounded px-1 py-0.5 text-xs bg-card-bg text-right"
+                            />
+                            <span className="text-muted text-xs">× {formatCurrency(parseFloat(item.unit_price))}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between mt-0.5">
+                          <span className="text-muted text-xs">Line Total</span>
+                          <span className="text-heading text-xs font-medium">
+                            {formatCurrency(item.quantity * parseFloat(item.unit_price))}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                    {items.length === 0 && <p className="text-muted text-xs">No items in this order yet.</p>}
+                  </div>
                 )}
               </div>
 
-              {/* Products */}
+              {/* Add item */}
               <div>
-                <p className="text-muted text-xs font-semibold uppercase tracking-wide mb-2">Products</p>
+                <p className="text-muted text-xs font-semibold uppercase tracking-wide mb-2">Add Item</p>
                 <div className="space-y-2">
-                  {selectedOrder.products.map((item) => (
-                    <div key={item.productId} className="bg-section-bg rounded-lg px-3 py-2.5">
-                      <p className="text-body text-xs font-medium leading-snug">{item.productName}</p>
-                      <div className="flex items-center justify-between mt-1.5">
-                        <span className="font-mono text-xs text-muted">{item.asin}</span>
-                        <span className="text-muted text-xs">{item.quantity} × {formatCurrency(item.unitCost)}</span>
-                      </div>
-                      <div className="flex items-center justify-between mt-0.5">
-                        <span className="text-muted text-xs">Total</span>
-                        <span className="text-heading text-xs font-medium">{formatCurrency(item.totalCost)}</span>
-                      </div>
-                    </div>
-                  ))}
+                  <select
+                    value={newItemProductId}
+                    onChange={(e) => {
+                      setNewItemProductId(e.target.value);
+                      const sp = orderSupplierProducts.find((p) => p.id === e.target.value);
+                      if (sp) setNewItemPrice(sp.cost_price);
+                    }}
+                    className="border border-border rounded-lg px-3 py-2 text-xs bg-page-bg w-full"
+                  >
+                    <option value="">Select a product</option>
+                    {orderSupplierProducts.map((sp) => (
+                      <option key={sp.id} value={sp.id}>
+                        {sp.product?.amazon_title ?? sp.product_id} — {sp.currency} {parseFloat(sp.cost_price).toFixed(2)}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="flex gap-2">
+                    <Input
+                      type="number"
+                      min={1}
+                      placeholder="Qty"
+                      value={newItemQty}
+                      onChange={(e) => setNewItemQty(e.target.value)}
+                      className="py-1.5! text-xs!"
+                    />
+                    <Input
+                      type="number"
+                      step="0.01"
+                      placeholder="Unit Price"
+                      value={newItemPrice}
+                      onChange={(e) => setNewItemPrice(e.target.value)}
+                      className="py-1.5! text-xs!"
+                    />
+                  </div>
+                  {addItemError && <p className="text-rose text-xs">{addItemError}</p>}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={handleAddItem}
+                    disabled={addItemSaving || !newItemProductId}
+                  >
+                    {addItemSaving ? "Adding…" : "+ Add Item"}
+                  </Button>
+                  {orderSupplierProducts.length === 0 && (
+                    <p className="text-muted text-xs">No products linked to this supplier yet.</p>
+                  )}
                 </div>
               </div>
 
-              {/* Financial summary */}
               <div>
-                <p className="text-muted text-xs font-semibold uppercase tracking-wide mb-2">Financial Summary</p>
-                <div className="bg-section-bg rounded-lg px-3 py-3 space-y-2">
-                  {[
-                    { label: "Total Cost",            value: formatCurrency(selectedOrder.totalCost) },
-                    { label: "Shipping",              value: formatCurrency(selectedOrder.shipping) },
-                    { label: "Tax & Customs",         value: formatCurrency(selectedOrder.taxAndCustoms) },
-                    { label: "Est. Sale Revenue",     value: formatCurrency(selectedOrder.totalCost + selectedOrder.expectedProfit) },
-                    { label: "Expected Profit",       value: formatCurrency(selectedOrder.expectedProfit), highlight: true },
-                    { label: "Expected ROI",          value: `+${selectedOrder.expectedRoi}%`, highlight: true },
-                  ].map(({ label, value, highlight }) => (
-                    <div key={label} className="flex items-center justify-between">
-                      <span className="text-muted text-xs">{label}</span>
-                      <span className={`text-xs font-medium ${highlight ? "text-mint" : "text-heading"}`}>{value}</span>
-                    </div>
-                  ))}
+                <p className="text-muted text-xs font-semibold uppercase tracking-wide mb-2">Total</p>
+                <div className="bg-section-bg rounded-lg px-3 py-3 flex items-center justify-between">
+                  <span className="text-muted text-xs">Order Total</span>
+                  <span className="text-heading text-sm font-semibold">
+                    {formatCurrency(parseFloat(selectedOrder.total_price))}
+                  </span>
                 </div>
               </div>
 
-              {/* Notes */}
-              {selectedOrder.notes && (
-                <div>
-                  <p className="text-muted text-xs font-semibold uppercase tracking-wide mb-1.5">Notes</p>
-                  <p className="text-body text-xs leading-relaxed bg-section-bg rounded-lg px-3 py-2.5">
-                    {selectedOrder.notes}
-                  </p>
-                </div>
-              )}
-
-              {/* Status history */}
               <div>
-                <p className="text-muted text-xs font-semibold uppercase tracking-wide mb-3">Status History</p>
-                <ol className="relative border-l border-border ml-2 space-y-4">
-                  {statusHistory.map((step, i) => {
-                    const isLast = i === statusHistory.length - 1;
-                    return (
-                      <li key={i} className="ml-4">
-                        <span className={`absolute -left-1.5 w-3 h-3 rounded-full border-2 border-card-bg ${isLast ? "bg-primary" : "bg-border"}`} />
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <StatusBadge status={step.status} />
-                          <span className="text-muted text-xs">{step.date}</span>
-                        </div>
-                        <p className="text-muted text-xs">{step.note}</p>
-                      </li>
-                    );
-                  })}
-                </ol>
+                <p className="text-muted text-xs font-semibold uppercase tracking-wide mb-2">Status</p>
+                <select
+                  value={selectedOrder.status}
+                  onChange={(e) => handleStatusChange(e.target.value as OrderStatus)}
+                  disabled={statusSaving}
+                  className="border border-border rounded-lg px-3 py-2 text-sm bg-page-bg w-full"
+                >
+                  {STATUSES.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
               </div>
             </div>
 
-            {/* Panel footer */}
             <div className="shrink-0 px-6 py-4 border-t border-border flex gap-2">
-              <Button variant="primary" size="sm">Update Status</Button>
               <Button variant="ghost" size="sm" onClick={() => setSelectedOrderId(null)}>Close</Button>
             </div>
           </div>

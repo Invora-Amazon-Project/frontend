@@ -5,6 +5,7 @@ import {
   registerService,
   forgotPasswordService,
   resetPasswordService,
+  logoutService,
   LoginPayload,
   RegisterPayload,
   ForgotPasswordPayload,
@@ -84,6 +85,17 @@ export const resetPassword = createAsyncThunk(
     }
   }
 );
+
+export const logoutUser = createAsyncThunk("auth/logout", async (_, { dispatch, getState }) => {
+  try {
+    const refreshToken = (getState() as { auth: AuthState }).auth.refreshToken;
+    if (refreshToken) {
+      await logoutService({ refreshToken });
+    }
+  } finally {
+    dispatch(logout());
+  }
+});
 
 const authSlice = createSlice({
   name: "auth",

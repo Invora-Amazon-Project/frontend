@@ -2,12 +2,25 @@ import { axiosInstance } from "../authService";
 
 export type MembershipRole = "OWNER" | "ADMIN" | "STAFF" | "CUSTOMER";
 
+export interface SubscriptionPlanInfo {
+  id: string;
+  name: string;
+  price: number;
+}
+
+export interface EmbeddedSubscription {
+  status: string;
+  trial_end?: string;
+  plan: SubscriptionPlanInfo;
+}
+
 export interface AdminUserListItem {
   id: string;
   email: string;
   name?: string;
   role: MembershipRole;
   created_at?: string;
+  subscriptions?: EmbeddedSubscription[];
 }
 
 export interface GetAdminUsersParams {
@@ -37,23 +50,3 @@ export async function getAdminUsers(
   };
 }
 
-export interface SubscriptionPlanInfo {
-  id: string;
-  name: string;
-  price: number;
-}
-
-export interface UserSubscription {
-  id: string;
-  user_id: string;
-  plan_id: string;
-  status: string;
-  plan?: SubscriptionPlanInfo;
-  trial_end?: string;
-  renewal_date?: string;
-}
-
-export async function getUserSubscription(userId: string) {
-  const res = await axiosInstance.get<UserSubscription>(`/user-subscriptions/${userId}`);
-  return res.data;
-}
