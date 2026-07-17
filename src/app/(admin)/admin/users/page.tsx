@@ -7,7 +7,7 @@ import FilterTabs from "@/components/admin/FilterTabs";
 import type { PlanName } from "@/types";
 import {
   getNewsletterSubscribers,
-  deleteNewsletterSubscriber,
+  unsubscribeNewsletterSubscriber,
   type NewsletterSubscriber,
 } from "@/lib/newsletterService";
 import {
@@ -124,7 +124,7 @@ export default function UsersPage() {
   async function handleRemoveWaitlistSubscriber(id: string, email: string) {
     if (!window.confirm(`Remove ${email} from the waitlist?`)) return;
     try {
-      await deleteNewsletterSubscriber(id);
+      await unsubscribeNewsletterSubscriber(email);
       setWaitlist((prev) => prev.filter((w) => w.id !== id));
     } catch {
       window.alert("Failed to remove subscriber. Please try again.");

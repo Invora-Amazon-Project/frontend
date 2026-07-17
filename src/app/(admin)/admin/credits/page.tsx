@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import type { CreditTransaction, CreditTransactionType, AdminUser } from "@/types";
+import { getSubscriptionPlans } from "@/lib/services/subscriptionPlansService";
 
 const mockUsers: AdminUser[] = [
   { id: "U-1", name: "Sarah Johnson", email: "sarah.johnson@example.com", plan: "pro", creditBalance: 340, status: "active", joinedDate: "2025-01-14", role: "user" },
@@ -11,12 +12,6 @@ const mockUsers: AdminUser[] = [
   { id: "U-3", name: "Priya Nair", email: "priya.nair@example.com", plan: "starter", creditBalance: 80, status: "trial", joinedDate: "2025-05-20", role: "user" },
   { id: "U-6", name: "Omar Hassan", email: "omar.hassan@example.com", plan: "team", creditBalance: 870, status: "active", joinedDate: "2024-09-17", role: "user" },
 ];
-
-const planCreditLimit: Record<string, number> = {
-  starter: 200,
-  pro: 500,
-  team: 2000,
-};
 
 const mockTransactions: CreditTransaction[] = [
   { id: "TX-001", userId: "U-1", userName: "Sarah Johnson", type: "add", amount: 100, reason: "Monthly plan refill", date: "2025-06-01T08:00:00Z" },
@@ -44,6 +39,17 @@ export default function CreditsPage() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [addAmount, setAddAmount] = useState<number>(0);
   const [addReason, setAddReason] = useState("");
+  const [planCreditLimit, setPlanCreditLimit] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    getSubscriptionPlans()
+      .then((plans) => {
+        const map: Record<string, number> = {};
+        plans.forEach((p) => { map[p.name.toLowerCase()] = p.monthly_credits; });
+        setPlanCreditLimit(map);
+      })
+      .catch(() => setPlanCreditLimit({}));
+  }, []);
 
   function handleFind() {
     const user = mockUsers.find(
@@ -110,7 +116,7 @@ export default function CreditsPage() {
               </div>
               <div className="text-right">
                 <p className="text-heading font-bold text-2xl">{foundUser.creditBalance.toLocaleString()}</p>
-                <p className="text-muted text-sm">of {planCreditLimit[foundUser.plan].toLocaleString()} plan credits</p>
+                <p className="text-muted text-sm">of {(planCreditLimit[foundUser.plan] ?? 0).toLocaleString()} plan credits</p>
               </div>
             </div>
 

@@ -1,102 +1,52 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { AxiosError } from "axios";
 import Link from "next/link";
 import Button from "@/components/ui/Button";
 import Modal from "@/components/ui/Modal";
 import type { Supplier } from "@/types";
-
-// TODO: Replace with real API call — GET /suppliers
+import { useAppSelector } from "@/lib/hooks";
+import {
+  createSupplier,
+  deleteSupplier,
+  getSupplier,
+  getSuppliers,
+  updateSupplier,
+  type SupplierRecord,
+  type SupplierStatistics,
+} from "@/lib/services/suppliersService";
 
 const COUNTRY_FLAGS: Record<string, string> = {
   China: "🇨🇳", Germany: "🇩🇪", "United Kingdom": "🇬🇧",
   Turkey: "🇹🇷", India: "🇮🇳", USA: "🇺🇸",
 };
 
-const MOCK_SUPPLIERS: Supplier[] = [
-  {
-    id: "s1",
-    name: "Shanghai Source Co.",
-    country: "China",
-    currency: "USD",
-    contactPerson: "Wei Zhang",
-    email: "wei.zhang@shanghaisource.com",
-    phone: "+86 21 5555 0192",
-    website: "shanghaisource.com",
-    moq: 100,
-    paymentTerms: "30% deposit, 70% before shipment",
-    shippingTerms: "FOB Shanghai",
-    lastUploadedDate: "2026-07-04",
-    matchedProducts: 87,
-    profitableProducts: 61,
-    totalOrders: 14,
-    averageRoi: 46,
-    notes: "Reliable supplier, fast turnaround on samples. Prefers WeChat for communication.",
-  },
-  {
-    id: "s2",
-    name: "Royal Trading Ltd.",
-    country: "United Kingdom",
-    currency: "GBP",
-    contactPerson: "James Hartley",
-    email: "j.hartley@royaltrading.co.uk",
-    phone: "+44 20 7946 0312",
-    website: "royaltrading.co.uk",
-    moq: 50,
-    paymentTerms: "Net 30",
-    shippingTerms: "DDP to UK warehouse",
-    lastUploadedDate: "2026-07-05",
-    matchedProducts: 43,
-    profitableProducts: 38,
-    totalOrders: 9,
-    averageRoi: 52,
-    notes: "Premium quality, slightly higher prices. Best for kitchen and home categories.",
-  },
-  {
-    id: "s3",
-    name: "Nomader Europe GmbH",
-    country: "Germany",
-    currency: "EUR",
-    contactPerson: "Lena Müller",
-    email: "lena.muller@nomader.de",
-    phone: "+49 89 2140 5830",
-    website: "nomader.de",
-    moq: 200,
-    paymentTerms: "50% upfront, 50% on delivery",
-    shippingTerms: "CIF Hamburg",
-    lastUploadedDate: "2026-06-28",
-    matchedProducts: 29,
-    profitableProducts: 22,
-    totalOrders: 6,
-    averageRoi: 49,
-    notes: "Specializes in outdoor & sports. Lead time 3–4 weeks from order confirmation.",
-  },
-  {
-    id: "s4",
-    name: "Brieftons International",
-    country: "USA",
-    currency: "USD",
-    contactPerson: "Mike Thompson",
-    email: "mike@brieftons.com",
-    phone: "+1 888 555 0174",
-    website: "brieftons.com",
-    moq: 75,
-    paymentTerms: "100% payment before production",
-    shippingTerms: "EXW Los Angeles",
-    lastUploadedDate: "2026-07-01",
-    matchedProducts: 18,
-    profitableProducts: 15,
-    totalOrders: 4,
-    averageRoi: 43,
-    notes: "Only kitchen gadgets. Good for spiralizers and cutting tools. Minimum reorder respected.",
-  },
-];
-
-const TODAY = new Date("2026-07-06");
+function toSupplier(record: SupplierRecord, stats?: SupplierStatistics): Supplier {
+  return {
+    id: record.id,
+    name: record.name,
+    country: record.country ?? "Unknown",
+    currency: record.currency ?? "USD",
+    contactPerson: record.contactPerson ?? undefined,
+    email: record.email ?? undefined,
+    phone: record.phone ?? undefined,
+    website: record.website ?? undefined,
+    moq: record.moq ?? undefined,
+    paymentTerms: record.paymentTerms ?? undefined,
+    shippingTerms: record.shippingTerms ?? undefined,
+    notes: record.notes ?? undefined,
+    lastUploadedDate: stats?.lastUploadedDate ?? undefined,
+    matchedProducts: stats?.matchedProducts ?? 0,
+    profitableProducts: stats?.profitableProducts ?? 0,
+    totalOrders: stats?.totalOrders ?? 0,
+    averageRoi: stats?.averageRoi ?? 0,
+  };
+}
 
 function daysAgo(dateStr: string): number {
   const d = new Date(dateStr);
-  return Math.floor((TODAY.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
+  return Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
 }
 
 const CURRENCIES = ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "CNY", "TRY", "INR"];
@@ -113,7 +63,15 @@ const EMPTY_FORM: SupplierFormState = {
   moq: "", paymentTerms: "", shippingTerms: "", notes: "",
 };
 
-function SupplierCard({ supplier }: { supplier: Supplier }) {
+function SupplierCard({
+  supplier,
+  onEdit,
+  onDelete,
+}: {
+  supplier: Supplier;
+  onEdit: (supplier: Supplier) => void;
+  onDelete: (supplier: Supplier) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const flag = COUNTRY_FLAGS[supplier.country] ?? "🌍";
   const lastAgo = supplier.lastUploadedDate ? daysAgo(supplier.lastUploadedDate) : null;
@@ -136,6 +94,26 @@ function SupplierCard({ supplier }: { supplier: Supplier }) {
           <Link href={`/dashboard/import?supplierId=${supplier.id}&supplierName=${encodeURIComponent(supplier.name)}`}>
             <Button variant="primary" size="sm">Add List</Button>
           </Link>
+          <button
+            onClick={() => onEdit(supplier)}
+            title="Edit supplier"
+            className="p-2 text-muted hover:text-heading transition-colors cursor-pointer"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
+          </button>
+          <button
+            onClick={() => onDelete(supplier)}
+            title="Delete supplier"
+            className="p-2 text-muted hover:text-rose transition-colors cursor-pointer"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            </svg>
+          </button>
         </div>
       </div>
 
@@ -278,23 +256,110 @@ function SupplierCard({ supplier }: { supplier: Supplier }) {
 }
 
 export default function SuppliersPage() {
-  const [suppliers, setSuppliers] = useState<Supplier[]>(MOCK_SUPPLIERS);
-  const [showAddModal, setShowAddModal] = useState(false);
+  const workspaceId = useAppSelector((s) => s.workspace.current?.id);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [showFormModal, setShowFormModal] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<SupplierFormState>(EMPTY_FORM);
   const [formError, setFormError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const [deletingSupplier, setDeletingSupplier] = useState<Supplier | null>(null);
+  const [deleteError, setDeleteError] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   const setField = (field: keyof SupplierFormState, value: string) =>
     setForm((prev) => ({ ...prev, [field]: value }));
 
-  const handleAddSupplier = () => {
+  const closeFormModal = () => {
+    setShowFormModal(false);
+    setEditingId(null);
+    setForm(EMPTY_FORM);
+    setFormError("");
+  };
+
+  const openAddModal = () => {
+    setEditingId(null);
+    setForm(EMPTY_FORM);
+    setFormError("");
+    setShowFormModal(true);
+  };
+
+  const openEditModal = (supplier: Supplier) => {
+    setEditingId(supplier.id);
+    setForm({
+      name: supplier.name,
+      country: supplier.country,
+      currency: supplier.currency,
+      contactPerson: supplier.contactPerson ?? "",
+      email: supplier.email ?? "",
+      phone: supplier.phone ?? "",
+      website: supplier.website ?? "",
+      moq: supplier.moq !== undefined ? String(supplier.moq) : "",
+      paymentTerms: supplier.paymentTerms ?? "",
+      shippingTerms: supplier.shippingTerms ?? "",
+      notes: supplier.notes ?? "",
+    });
+    setFormError("");
+    setShowFormModal(true);
+  };
+
+  useEffect(() => {
+    if (!workspaceId) return;
+    let cancelled = false;
+
+    setLoading(true);
+    setLoadError("");
+
+    getSuppliers(workspaceId)
+      .then(async (records) => {
+        if (cancelled) return;
+        setSuppliers(records.map((r) => toSupplier(r)));
+        setLoading(false);
+
+        // Enrich with per-supplier statistics (list endpoint doesn't return them).
+        const enriched = await Promise.all(
+          records.map(async (r) => {
+            try {
+              const detail = await getSupplier(r.id, workspaceId);
+              return toSupplier(detail, detail.statistics);
+            } catch {
+              return toSupplier(r);
+            }
+          })
+        );
+        if (!cancelled) setSuppliers(enriched);
+      })
+      .catch((err: AxiosError<{ message?: string }>) => {
+        if (cancelled) return;
+        setLoadError(err.response?.data?.message ?? "Failed to load suppliers.");
+        setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceId]);
+
+  const handleSubmitForm = async () => {
     if (!form.name.trim()) {
       setFormError("Supplier name is required.");
       return;
     }
-    const newSupplier: Supplier = {
-      id: `s${Date.now()}`,
+    if (!workspaceId) {
+      setFormError("No active workspace found.");
+      return;
+    }
+
+    setSubmitting(true);
+    setFormError("");
+
+    const payload = {
+      workspace_id: workspaceId,
       name: form.name.trim(),
-      country: form.country.trim() || "Unknown",
+      country: form.country.trim() || undefined,
       currency: form.currency,
       contactPerson: form.contactPerson || undefined,
       email: form.email || undefined,
@@ -304,15 +369,52 @@ export default function SuppliersPage() {
       paymentTerms: form.paymentTerms || undefined,
       shippingTerms: form.shippingTerms || undefined,
       notes: form.notes || undefined,
-      matchedProducts: 0,
-      profitableProducts: 0,
-      totalOrders: 0,
-      averageRoi: 0,
     };
-    setSuppliers((prev) => [newSupplier, ...prev]);
-    setShowAddModal(false);
-    setForm(EMPTY_FORM);
-    setFormError("");
+
+    try {
+      if (editingId) {
+        const updated = await updateSupplier(editingId, payload);
+        setSuppliers((prev) => prev.map((s) => (s.id === editingId ? toSupplier(updated, {
+          lastUploadedDate: s.lastUploadedDate ?? null,
+          matchedProducts: s.matchedProducts,
+          profitableProducts: s.profitableProducts,
+          totalOrders: s.totalOrders,
+          averageRoi: s.averageRoi,
+        }) : s)));
+      } else {
+        const created = await createSupplier(payload);
+        setSuppliers((prev) => [toSupplier(created), ...prev]);
+      }
+      closeFormModal();
+    } catch (err) {
+      const axiosErr = err as AxiosError<{ message?: string }>;
+      setFormError(axiosErr.response?.data?.message ?? `Failed to ${editingId ? "update" : "create"} supplier.`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingSupplier || !workspaceId) return;
+
+    setDeleting(true);
+    setDeleteError("");
+
+    try {
+      await deleteSupplier(deletingSupplier.id, workspaceId);
+      setSuppliers((prev) => prev.filter((s) => s.id !== deletingSupplier.id));
+      setDeletingSupplier(null);
+    } catch (err) {
+      const axiosErr = err as AxiosError<{ message?: string }>;
+      const status = axiosErr.response?.status;
+      setDeleteError(
+        status === 500
+          ? "This supplier has related products/orders and can't be deleted yet."
+          : axiosErr.response?.data?.message ?? "Failed to delete supplier."
+      );
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -323,7 +425,7 @@ export default function SuppliersPage() {
           <h1 className="text-heading font-semibold text-2xl">Suppliers</h1>
           <p className="text-muted text-sm mt-1">Manage your supplier relationships and product catalogs.</p>
         </div>
-        <Button variant="primary" size="sm" onClick={() => setShowAddModal(true)}>
+        <Button variant="primary" size="sm" onClick={openAddModal}>
           <span className="flex items-center gap-1.5">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -334,26 +436,36 @@ export default function SuppliersPage() {
       </div>
 
       {/* Supplier cards */}
-      <div className="grid grid-cols-1 gap-4">
-        {suppliers.map((s) => (
-          <SupplierCard key={s.id} supplier={s} />
-        ))}
-        {suppliers.length === 0 && (
-          <div className="bg-card-bg border border-border rounded-xl p-12 text-center">
-            <p className="text-heading font-semibold text-base">No suppliers yet</p>
-            <p className="text-muted text-sm mt-1">Add your first supplier to start importing product lists.</p>
-          </div>
-        )}
-      </div>
+      {loading ? (
+        <div className="bg-card-bg border border-border rounded-xl p-12 text-center">
+          <p className="text-muted text-sm">Loading suppliers…</p>
+        </div>
+      ) : loadError ? (
+        <div className="bg-rose-bg border border-border rounded-xl p-12 text-center">
+          <p className="text-rose text-sm">{loadError}</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4">
+          {suppliers.map((s) => (
+            <SupplierCard key={s.id} supplier={s} onEdit={openEditModal} onDelete={setDeletingSupplier} />
+          ))}
+          {suppliers.length === 0 && (
+            <div className="bg-card-bg border border-border rounded-xl p-12 text-center">
+              <p className="text-heading font-semibold text-base">No suppliers yet</p>
+              <p className="text-muted text-sm mt-1">Add your first supplier to start importing product lists.</p>
+            </div>
+          )}
+        </div>
+      )}
 
-      {/* Add Supplier Modal */}
-      <Modal isOpen={showAddModal} onClose={() => { setShowAddModal(false); setFormError(""); }}>
+      {/* Add/Edit Supplier Modal */}
+      <Modal isOpen={showFormModal} onClose={closeFormModal}>
         <div className="bg-card-bg rounded-2xl border border-border shadow-xl overflow-hidden max-h-[90vh] flex flex-col">
           {/* Modal header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
-            <h2 className="text-heading font-semibold text-lg">Add Supplier</h2>
+            <h2 className="text-heading font-semibold text-lg">{editingId ? "Edit Supplier" : "Add Supplier"}</h2>
             <button
-              onClick={() => { setShowAddModal(false); setFormError(""); }}
+              onClick={closeFormModal}
               className="text-muted hover:text-heading transition-colors p-1 cursor-pointer"
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -506,11 +618,42 @@ export default function SuppliersPage() {
 
           {/* Modal footer */}
           <div className="flex gap-2 justify-end px-6 py-4 border-t border-border shrink-0">
-            <Button variant="ghost" size="md" onClick={() => { setShowAddModal(false); setFormError(""); }}>
+            <Button variant="ghost" size="md" onClick={closeFormModal} disabled={submitting}>
               Cancel
             </Button>
-            <Button variant="primary" size="md" onClick={handleAddSupplier}>
-              Add Supplier
+            <Button variant="primary" size="md" onClick={handleSubmitForm} disabled={submitting}>
+              {submitting ? (editingId ? "Saving…" : "Adding…") : editingId ? "Save Changes" : "Add Supplier"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Delete Confirmation Modal */}
+      <Modal isOpen={!!deletingSupplier} onClose={() => { setDeletingSupplier(null); setDeleteError(""); }}>
+        <div className="bg-card-bg rounded-2xl border border-border shadow-xl overflow-hidden max-w-md">
+          <div className="px-6 py-4 border-b border-border">
+            <h2 className="text-heading font-semibold text-lg">Delete Supplier</h2>
+          </div>
+          <div className="px-6 py-5 space-y-3">
+            <p className="text-body text-sm">
+              Are you sure you want to delete <span className="font-semibold">{deletingSupplier?.name}</span>? This
+              cannot be undone.
+            </p>
+            {deleteError && (
+              <p className="text-rose text-sm bg-rose-bg px-3 py-2 rounded-lg">{deleteError}</p>
+            )}
+          </div>
+          <div className="flex gap-2 justify-end px-6 py-4 border-t border-border">
+            <Button
+              variant="ghost"
+              size="md"
+              onClick={() => { setDeletingSupplier(null); setDeleteError(""); }}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+            <Button variant="primary" size="md" onClick={handleConfirmDelete} disabled={deleting}>
+              {deleting ? "Deleting…" : "Delete"}
             </Button>
           </div>
         </div>

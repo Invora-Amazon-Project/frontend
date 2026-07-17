@@ -1,10 +1,12 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import Button from "@/components/ui/Button";
 import { useAppDispatch } from "@/lib/hooks";
 import { logoutUser } from "@/lib/authSlice";
+import { getMeService } from "@/lib/authService";
 
 const PATH_TITLES: Record<string, string> = {
   "/dashboard": "Home",
@@ -20,7 +22,6 @@ const PATH_TITLES: Record<string, string> = {
   "/dashboard/settings": "Settings",
 };
 
-const USER_NAME = "Halenur Gurel";
 const HAS_UNREAD = true;
 
 interface DashboardHeaderProps {
@@ -32,7 +33,23 @@ export default function DashboardHeader({ onToggleSidebar }: DashboardHeaderProp
   const router = useRouter();
   const dispatch = useAppDispatch();
   const title = PATH_TITLES[pathname] ?? "Dashboard";
-  const initial = USER_NAME.charAt(0).toUpperCase();
+
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+
+  useEffect(() => {
+    getMeService()
+      .then((user) => {
+        setFirstName(user.first_name ?? "");
+        setLastName(user.last_name ?? "");
+      })
+      .catch(() => {
+        setFirstName("");
+        setLastName("");
+      });
+  }, []);
+
+  const initials = `${firstName.trim().charAt(0)}${lastName.trim().charAt(0)}`.toUpperCase();
 
   const handleLogout = async () => {
     await dispatch(logoutUser());
@@ -83,7 +100,14 @@ export default function DashboardHeader({ onToggleSidebar }: DashboardHeaderProp
           href="/dashboard/settings"
           className="w-8 h-8 rounded-full bg-primary-light text-primary text-sm font-semibold flex items-center justify-center select-none cursor-pointer"
         >
-          {initial}
+          {firstName.trim() || lastName.trim() ? (
+            initials
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="8" r="4" />
+              <path d="M4 20c0-4 3.5-7 8-7s8 3 8 7" />
+            </svg>
+          )}
         </Link>
 
         <button

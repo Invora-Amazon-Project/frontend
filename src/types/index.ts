@@ -50,11 +50,13 @@ export interface PlanConfig {
   monthlyCredits: number;
   importLimit: number;
   watchlistLimit: number;
+  apiLimit: number;
   dailyPulseAccess: boolean;
   exportOptions: string[];
   supportLevel: SupportLevel;
   annualDiscountPercent: number;
   includedTeamSeats?: number;
+  isActive: boolean;
 }
 
 export interface CreditTransaction {

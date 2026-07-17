@@ -4,15 +4,24 @@ import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
+import { useAppDispatch, useAppSelector } from "@/lib/hooks";
+import { fetchCurrentWorkspace } from "@/lib/workspaceSlice";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isDashboard = pathname.startsWith("/dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const dispatch = useAppDispatch();
+  const { current: workspace, loading: workspaceLoading } = useAppSelector((s) => s.workspace);
 
   // Default to open on desktop (lg+), closed on mobile/tablet
   useEffect(() => {
     if (window.innerWidth >= 1024) setSidebarOpen(true);
+  }, []);
+
+  useEffect(() => {
+    if (!workspace && !workspaceLoading) dispatch(fetchCurrentWorkspace());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!isDashboard) {

@@ -1,11 +1,61 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Button from "@/components/ui/Button";
 import type { PlanConfig, PlanName, SupportLevel } from "@/types";
+import {
+  createSubscriptionPlan,
+  getSubscriptionPlans,
+  updateSubscriptionPlan,
+  type SubscriptionPlan,
+  type SubscriptionPlanPayload,
+} from "@/lib/services/subscriptionPlansService";
 
 const EXPORT_OPTIONS = ["CSV", "Excel", "PDF"];
 const SUPPORT_LEVELS: SupportLevel[] = ["Standard", "Prioritized", "Team Priority"];
+
+// Backend plan seed uses title-case names ("Start"/"Pro"/"Team"); admin UI keys stay lowercase.
+const BACKEND_PLAN_NAME: Record<PlanName, string> = {
+  starter: "Start",
+  pro: "Pro",
+  team: "Team",
+};
+
+function toPlanConfig(name: PlanName, p: SubscriptionPlan): PlanConfig {
+  return {
+    name,
+    price: p.price,
+    trialDays: p.trial_days,
+    monthlyCredits: p.monthly_credits,
+    importLimit: p.product_limit,
+    watchlistLimit: p.list_limit,
+    apiLimit: p.api_limit,
+    dailyPulseAccess: p.daily_pulse_access,
+    exportOptions: p.export_options ?? [],
+    supportLevel: (p.support_level as SupportLevel) ?? "Standard",
+    annualDiscountPercent: p.annual_discount,
+    includedTeamSeats: p.team_limit,
+    isActive: p.is_active,
+  };
+}
+
+function toPayload(planKey: PlanName, plan: PlanConfig): SubscriptionPlanPayload {
+  return {
+    name: BACKEND_PLAN_NAME[planKey],
+    price: plan.price,
+    annual_discount: plan.annualDiscountPercent,
+    trial_days: plan.trialDays,
+    monthly_credits: plan.monthlyCredits,
+    product_limit: plan.importLimit,
+    list_limit: plan.watchlistLimit,
+    team_limit: plan.includedTeamSeats ?? 0,
+    api_limit: plan.apiLimit,
+    daily_pulse_access: plan.dailyPulseAccess,
+    support_level: plan.supportLevel,
+    export_options: plan.exportOptions,
+    is_active: plan.isActive,
+  };
+}
 
 const initialPlans: PlanConfig[] = [
   {
@@ -15,10 +65,13 @@ const initialPlans: PlanConfig[] = [
     monthlyCredits: 200,
     importLimit: 100,
     watchlistLimit: 20,
+    apiLimit: 100,
     dailyPulseAccess: false,
     exportOptions: ["CSV"],
     supportLevel: "Standard",
     annualDiscountPercent: 17.24,
+    includedTeamSeats: 0,
+    isActive: true,
   },
   {
     name: "pro",
@@ -27,10 +80,13 @@ const initialPlans: PlanConfig[] = [
     monthlyCredits: 500,
     importLimit: 500,
     watchlistLimit: 100,
+    apiLimit: 500,
     dailyPulseAccess: true,
     exportOptions: ["CSV", "Excel"],
     supportLevel: "Prioritized",
     annualDiscountPercent: 17.72,
+    includedTeamSeats: 0,
+    isActive: true,
   },
   {
     name: "team",
@@ -39,11 +95,13 @@ const initialPlans: PlanConfig[] = [
     monthlyCredits: 2000,
     importLimit: 2000,
     watchlistLimit: 500,
+    apiLimit: 2000,
     dailyPulseAccess: true,
     exportOptions: ["CSV", "Excel", "PDF"],
     supportLevel: "Team Priority",
     annualDiscountPercent: 16.76,
     includedTeamSeats: 3,
+    isActive: true,
   },
 ];
 
@@ -69,10 +127,43 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void 
   );
 }
 
-function PlanCard({ initial }: { initial: PlanConfig }) {
+function PlanCard({
+  initial,
+  planKey,
+  existingId,
+}: {
+  initial: PlanConfig;
+  planKey: PlanName;
+  existingId: string | null;
+}) {
   const [plan, setPlan] = useState<PlanConfig>(initial);
+  const [id, setId] = useState<string | null>(existingId);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
   const annualMonthly = plan.price * (1 - plan.annualDiscountPercent / 100);
   const annualTotal = annualMonthly * 12;
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaveError(null);
+    setSaved(false);
+    try {
+      const payload = toPayload(planKey, plan);
+      if (id) {
+        await updateSubscriptionPlan(id, payload);
+      } else {
+        const created = await createSubscriptionPlan(payload);
+        setId(created.id);
+      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch {
+      setSaveError("Changes could not be saved.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   function field(key: keyof PlanConfig, label: string, type: "number" | "text") {
     return (
@@ -124,6 +215,7 @@ function PlanCard({ initial }: { initial: PlanConfig }) {
         {field("monthlyCredits", "Monthly Credits", "number")}
         {field("importLimit", "Import Limit", "number")}
         {field("watchlistLimit", "Watchlist Limit", "number")}
+        {field("apiLimit", "API Limit", "number")}
 
         {plan.name === "team" && (
           <div>
@@ -146,6 +238,15 @@ function PlanCard({ initial }: { initial: PlanConfig }) {
           <Toggle
             checked={plan.dailyPulseAccess}
             onChange={() => setPlan({ ...plan, dailyPulseAccess: !plan.dailyPulseAccess })}
+          />
+        </div>
+
+        {/* Plan active toggle */}
+        <div className="flex items-center justify-between">
+          <span className="text-muted text-xs">Plan Active</span>
+          <Toggle
+            checked={plan.isActive}
+            onChange={() => setPlan({ ...plan, isActive: !plan.isActive })}
           />
         </div>
 
@@ -186,14 +287,39 @@ function PlanCard({ initial }: { initial: PlanConfig }) {
       </div>
 
       {/* Footer */}
-      <Button variant="primary" size="sm">
-        Save Changes
-      </Button>
+      <div className="flex items-center gap-3">
+        <Button variant="primary" size="sm" onClick={handleSave} disabled={saving}>
+          {saving ? "Saving..." : "Save Changes"}
+        </Button>
+        {saved && <span className="text-mint text-xs font-medium">Saved.</span>}
+        {saveError && <span className="text-rose text-xs font-medium">{saveError}</span>}
+      </div>
     </div>
   );
 }
 
 export default function PlansPage() {
+  const [backendPlans, setBackendPlans] = useState<SubscriptionPlan[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getSubscriptionPlans()
+      .then((data) => {
+        if (!cancelled) setBackendPlans(data);
+      })
+      .catch(() => {
+        if (!cancelled) setLoadError("Plans could not be loaded.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <div className="space-y-6">
       <div>
@@ -201,11 +327,31 @@ export default function PlansPage() {
         <p className="text-muted text-sm mt-1">Changes here affect plan limits for all users on each plan.</p>
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
-        {initialPlans.map((plan) => (
-          <PlanCard key={plan.name} initial={plan} />
-        ))}
-      </div>
+      {loadError && (
+        <div className="rounded-xl border border-rose-200 bg-rose-bg px-4 py-3 text-sm text-rose-600">
+          {loadError}
+        </div>
+      )}
+
+      {loading ? (
+        <p className="text-muted text-sm">Loading plans...</p>
+      ) : (
+        <div className="grid grid-cols-3 gap-6">
+          {initialPlans.map((defaultPlan) => {
+            const existing = backendPlans.find(
+              (p) => p.name.toLowerCase() === BACKEND_PLAN_NAME[defaultPlan.name].toLowerCase()
+            );
+            return (
+              <PlanCard
+                key={defaultPlan.name}
+                planKey={defaultPlan.name}
+                initial={existing ? toPlanConfig(defaultPlan.name, existing) : defaultPlan}
+                existingId={existing?.id ?? null}
+              />
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

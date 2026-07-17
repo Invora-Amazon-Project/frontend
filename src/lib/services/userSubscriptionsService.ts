@@ -1,4 +1,12 @@
 import { axiosInstance } from "../authService";
+import { SubscriptionPlan } from "./subscriptionPlansService";
+
+export type SubscriptionStatus =
+  | "TRIALING"
+  | "ACTIVE"
+  | "PAST_DUE"
+  | "CANCELED"
+  | "EXPIRED";
 
 export interface UserSubscription {
   id: string;
@@ -6,9 +14,12 @@ export interface UserSubscription {
   plan_id: string;
   stripe_customer_id?: string;
   stripe_subscription_id?: string;
-  status: string;
+  status: SubscriptionStatus;
+  current_period_start?: string;
   trial_end?: string;
   renewal_date?: string;
+  cancel_at_period_end: boolean;
+  plan: SubscriptionPlan;
 }
 
 export interface CreateUserSubscriptionPayload {
@@ -24,5 +35,14 @@ export async function createUserSubscription(
 
 export async function getUserSubscription(): Promise<UserSubscription> {
   const res = await axiosInstance.get<UserSubscription>("/user-subscriptions/me");
-  return res.data;
+  const data = res.data;
+  return {
+    ...data,
+    // Nested plan has the same `price`/`export_options` serialization quirks as /subscription-plans.
+    plan: {
+      ...data.plan,
+      price: Number(data.plan.price),
+      export_options: Array.isArray(data.plan.export_options) ? data.plan.export_options : [],
+    },
+  };
 }
